@@ -9,19 +9,21 @@ This document describes how to write SQL templates for sqly.
 sqly SQL templates are **2-way SQL**.
 
 - Through sqly, parameters are bound and the SQL is executed
-- Through a DB tool (pgAdmin, DBeaver, etc.), the default values are used as-is
+- Through a DB tool (pgAdmin, DBeaver, etc.), the default values are used
+  as-is
 
 ```sql
 SELECT * FROM users WHERE name = /* $name */'Yamada'
 ```
 
 | Execution method | Result |
-|---|---|
+| --- | --- |
 | Directly in a DB tool | `WHERE name = 'Yamada'` (default value is used) |
 | Via sqly | `WHERE name = ?` + bind value `['Yamada']` |
 
-Parameters are written inside SQL comments `/* ... */`, with a default value placed immediately after.
-DB tools ignore comments, so the default value is used as-is.
+Parameters are written inside SQL comments `/* ... */`, with a default value
+placed immediately after. DB tools ignore comments, so the default value is
+used as-is.
 
 ---
 
@@ -64,7 +66,8 @@ When the first condition is `None`:
 result = parse_sql(sql, {"dept_id": None, "name": "Yamada", "status": "active"})
 ```
 
-The `dept_id` line is removed, and the leading `AND` before `name` is automatically stripped:
+The `dept_id` line is removed, and the leading `AND` before `name` is
+automatically stripped:
 
 ```sql
 SELECT * FROM employee
@@ -80,8 +83,8 @@ WHERE
 /* param_name */default_value
 ```
 
-Even when the parameter is `None`, the line is **not removed** — the value is bound as NULL.
-Use this for columns that can legitimately be NULL.
+Even when the parameter is `None`, the line is **not removed** — the value is
+bound as NULL. Use this for columns that can legitimately be NULL.
 
 ```sql
 UPDATE employee SET
@@ -105,7 +108,7 @@ WHERE
 ### Default Value Formats
 
 | Format | Example | Use case |
-|---|---|---|
+| --- | --- | --- |
 | String | `'Yamada'` | String parameters |
 | Number | `123`, `45.67` | Numeric parameters |
 | NULL | `NULL` | NULL checks |
@@ -116,7 +119,8 @@ WHERE
 
 ## Line Removal and Parent-Child Relationships
 
-sqly processes SQL **line by line**. Dynamic condition building is achieved through line removal.
+sqly processes SQL **line by line**. Dynamic condition building is achieved
+through line removal.
 
 ### Rule 1: Line-by-line Processing
 
@@ -142,6 +146,7 @@ WHERE
 ```
 
 When both `dept_id` and `name` are `None`:
+
 - Both lines are removed → all children are removed
 - The `WHERE` line is also removed
 
@@ -152,7 +157,8 @@ SELECT * FROM employee
 
 ### Rule 4: Lines with `$`-prefixed Parameters Set to None Are Removed
 
-When a `$`-prefixed parameter is `None` (or missing from params), the entire line is removed.
+When a `$`-prefixed parameter is `None` (or missing from params), the entire
+line is removed.
 
 ---
 
@@ -174,7 +180,8 @@ When both `status1` and `status2` are `None`:
 
 1. The `status1` and `status2` lines are removed (Rule 4)
 2. All children of `AND (` are removed → `AND (` is also removed (Rule 3)
-3. The closing `)` is also removed since its matching open parenthesis was removed
+3. The closing `)` is also removed since its matching open parenthesis was
+   removed
 4. Final result:
 
 ```sql
@@ -211,7 +218,8 @@ WHERE
 
 ### Basic Usage
 
-When a list parameter is provided, the IN clause placeholders are automatically expanded.
+When a list parameter is provided, the IN clause placeholders are automatically
+expanded.
 
 ```sql
 SELECT * FROM employee
@@ -307,19 +315,28 @@ With the `:name` format, use `result.named_params` for binding.
 
 #### Oracle IN Clauses
 
-With the `:name` format, IN clauses are expanded into sequentially numbered named parameters.
+With the `:name` format, IN clauses are expanded into sequentially numbered
+named parameters.
 
 ```sql
 WHERE dept_id IN /* $dept_ids */(1, 2, 3)
 ```
 
 ```python
-result = parse_sql(sql, {"dept_ids": [10, 20, 30]}, dialect=Dialect.ORACLE)
+result = parse_sql(
+    sql,
+    {"dept_ids": [10, 20, 30]},
+    dialect=Dialect.ORACLE,
+)
 ```
 
 ```sql
 WHERE dept_id IN (:dept_ids_0, :dept_ids_1, :dept_ids_2)
--- result.named_params = {'dept_ids_0': 10, 'dept_ids_1': 20, 'dept_ids_2': 30}
+-- result.named_params = {
+--   'dept_ids_0': 10,
+--   'dept_ids_1': 20,
+--   'dept_ids_2': 30,
+-- }
 ```
 
 ---
@@ -328,7 +345,7 @@ WHERE dept_id IN (:dept_ids_0, :dept_ids_1, :dept_ids_2)
 
 When SQL syntax differs across databases, provide separate files.
 
-```
+```text
 sql/employee/
 ├── find.sql              # Common SQL
 ├── find.sql-oracle       # Oracle-specific (loaded preferentially)
@@ -338,11 +355,13 @@ sql/employee/
 ```python
 loader = SqlLoader("sql")
 
-# With a dialect specified, find.sql-oracle is tried first, falling back to find.sql
+# With a dialect specified, find.sql-oracle is tried first, falling back to
+# find.sql
 sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
 ```
 
-Use this mechanism for RDBMS-specific SQL syntax such as pagination (`LIMIT/OFFSET`, `ROWNUM`, etc.) or UPSERT.
+Use this mechanism for RDBMS-specific SQL syntax such as pagination
+(`LIMIT/OFFSET`, `ROWNUM`, etc.) or UPSERT.
 
 ---
 
@@ -356,7 +375,10 @@ SQL snippet. To hide the SQL snippet, disable it via config:
 from sqly import config
 
 config.ERROR_INCLUDE_SQL = False
+config.ERROR_MESSAGE_LANGUAGE = "en"
 ```
+
+Set `ERROR_MESSAGE_LANGUAGE` to `ja` or `en`.
 
 Example:
 
@@ -393,24 +415,30 @@ ORDER BY e.id
 
 ```python
 # All conditions specified
-result = parse_sql(sql, {
-    "id": 100,
-    "name_pattern": "%Yamada%",
-    "dept_ids": [10, 20],
-    "status": "active",
-    "hire_from": "2023-01-01",
-    "hire_to": "2023-12-31",
-})
+result = parse_sql(
+    sql,
+    {
+        "id": 100,
+        "name_pattern": "%Yamada%",
+        "dept_ids": [10, 20],
+        "status": "active",
+        "hire_from": "2023-01-01",
+        "hire_to": "2023-12-31",
+    },
+)
 
 # Only some conditions (None removes the line)
-result = parse_sql(sql, {
-    "id": None,
-    "name_pattern": "%Yamada%",
-    "dept_ids": None,
-    "status": None,
-    "hire_from": None,
-    "hire_to": None,
-})
+result = parse_sql(
+    sql,
+    {
+        "id": None,
+        "name_pattern": "%Yamada%",
+        "dept_ids": None,
+        "status": None,
+        "hire_from": None,
+        "hire_to": None,
+    },
+)
 # → WHERE e.name LIKE ? ORDER BY e.id
 ```
 
@@ -421,7 +449,8 @@ INSERT INTO employee (name, dept_id, status)
 VALUES (/* name */'', /* dept_id */0, /* status */'')
 ```
 
-INSERT parameters do not need line removal, so use the non-removable form (no `$` prefix).
+INSERT parameters do not need line removal, so use the non-removable form
+(no `$` prefix).
 
 ### UPDATE
 
@@ -434,4 +463,5 @@ WHERE
     id = /* $id */1
 ```
 
-Typically, SET clause parameters use the non-removable form, while WHERE clause parameters use the removable form with `$`.
+Typically, SET clause parameters use the non-removable form, while WHERE clause
+parameters use the removable form with `$`.

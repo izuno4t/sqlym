@@ -239,3 +239,14 @@ class TestInClauseSplit:
             parser.parse({"ids": ids})
         assert "sql=" not in str(excinfo.value)
         assert "line=1" in str(excinfo.value)
+
+    def test_split_error_language_english(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """英語メッセージに切り替えられる."""
+        from sqly import config
+
+        monkeypatch.setattr(config, "ERROR_MESSAGE_LANGUAGE", "en")
+        sql = "SELECT * FROM t WHERE id + 1 IN /* $ids */(1)"
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        with pytest.raises(SqlParseError, match=r"Failed to extract column expression"):
+            parser.parse({"ids": ids})

@@ -9,19 +9,21 @@ sqly で使用する SQL テンプレートの書き方を説明します。
 sqly の SQL テンプレートは **2way SQL** です。
 
 - sqly を通すとパラメータがバインドされた SQL になる
-- DB ツール（pgAdmin、DBeaver 等）でそのまま実行するとデフォルト値で動作する
+- DB ツール（pgAdmin、DBeaver 等）でそのまま実行するとデフォルト値で
+  動作する
 
 ```sql
 SELECT * FROM users WHERE name = /* $name */'山田太郎'
 ```
 
 | 実行方法 | 結果 |
-|---|---|
+| --- | --- |
 | DB ツールで直接実行 | `WHERE name = '山田太郎'`（デフォルト値が使われる） |
 | sqly 経由で実行 | `WHERE name = ?` + バインド値 `['山田太郎']` |
 
-SQL コメント `/* ... */` の中にパラメータを書き、コメント直後にデフォルト値を置く。
-DB ツールはコメントを無視するのでデフォルト値がそのまま使われます。
+SQL コメント `/* ... */` の中にパラメータを書き、コメント直後に
+デフォルト値を置く。DB ツールはコメントを無視するのでデフォルト値が
+そのまま使われます。
 
 ---
 
@@ -105,7 +107,7 @@ WHERE
 ### デフォルト値の形式
 
 | 形式 | 例 | 用途 |
-|---|---|---|
+| --- | --- | --- |
 | 文字列 | `'山田太郎'` | 文字列パラメータ |
 | 数値 | `123`, `45.67` | 数値パラメータ |
 | NULL | `NULL` | NULL チェック |
@@ -116,7 +118,8 @@ WHERE
 
 ## 行の削除と親子関係
 
-sqly は **行単位** で SQL を処理します。動的な条件の組み立ては行の削除で実現します。
+sqly は **行単位** で SQL を処理します。動的な条件の組み立ては行の削除で
+実現します。
 
 ### Rule 1：行単位処理
 
@@ -142,6 +145,7 @@ WHERE
 ```
 
 `dept_id` と `name` が両方 `None` の場合：
+
 - 2 行とも削除 → 子が全て削除
 - `WHERE` 行も削除
 
@@ -152,7 +156,8 @@ SELECT * FROM employee
 
 ### Rule 4：`$` 付きパラメータが None なら行を削除する
 
-`$` 付きのパラメータが `None`（または params に存在しない）場合、その行全体が削除されます。
+`$` 付きのパラメータが `None`（または params に存在しない）場合、
+その行全体が削除されます。
 
 ---
 
@@ -314,12 +319,20 @@ WHERE dept_id IN /* $dept_ids */(1, 2, 3)
 ```
 
 ```python
-result = parse_sql(sql, {"dept_ids": [10, 20, 30]}, dialect=Dialect.ORACLE)
+result = parse_sql(
+    sql,
+    {"dept_ids": [10, 20, 30]},
+    dialect=Dialect.ORACLE,
+)
 ```
 
 ```sql
 WHERE dept_id IN (:dept_ids_0, :dept_ids_1, :dept_ids_2)
--- result.named_params = {'dept_ids_0': 10, 'dept_ids_1': 20, 'dept_ids_2': 30}
+-- result.named_params = {
+--   'dept_ids_0': 10,
+--   'dept_ids_1': 20,
+--   'dept_ids_2': 30,
+-- }
 ```
 
 ---
@@ -328,7 +341,7 @@ WHERE dept_id IN (:dept_ids_0, :dept_ids_1, :dept_ids_2)
 
 RDBMS ごとに SQL 構文が異なる場合は、ファイルを分けて対応します。
 
-```
+```text
 sql/employee/
 ├── find.sql              # 共通 SQL
 ├── find.sql-oracle       # Oracle 固有（優先ロード）
@@ -338,7 +351,8 @@ sql/employee/
 ```python
 loader = SqlLoader("sql")
 
-# Dialect を指定すると、まず find.sql-oracle を探し、なければ find.sql にフォールバック
+# Dialect を指定すると、まず find.sql-oracle を探し、なければ find.sql に
+# フォールバック
 sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
 ```
 
@@ -357,7 +371,10 @@ SQL パースに失敗した場合（例: IN 句分割ができない場合）�
 from sqly import config
 
 config.ERROR_INCLUDE_SQL = False
+config.ERROR_MESSAGE_LANGUAGE = "en"
 ```
+
+`ERROR_MESSAGE_LANGUAGE` は `ja` / `en` を指定できます。
 
 例:
 
@@ -394,24 +411,30 @@ ORDER BY e.id
 
 ```python
 # 全条件指定
-result = parse_sql(sql, {
-    "id": 100,
-    "name_pattern": "%山田%",
-    "dept_ids": [10, 20],
-    "status": "active",
-    "hire_from": "2023-01-01",
-    "hire_to": "2023-12-31",
-})
+result = parse_sql(
+    sql,
+    {
+        "id": 100,
+        "name_pattern": "%山田%",
+        "dept_ids": [10, 20],
+        "status": "active",
+        "hire_from": "2023-01-01",
+        "hire_to": "2023-12-31",
+    },
+)
 
 # 一部条件のみ（指定しない条件は None で行削除）
-result = parse_sql(sql, {
-    "id": None,
-    "name_pattern": "%山田%",
-    "dept_ids": None,
-    "status": None,
-    "hire_from": None,
-    "hire_to": None,
-})
+result = parse_sql(
+    sql,
+    {
+        "id": None,
+        "name_pattern": "%山田%",
+        "dept_ids": None,
+        "status": None,
+        "hire_from": None,
+        "hire_to": None,
+    },
+)
 # → WHERE e.name LIKE ? ORDER BY e.id
 ```
 

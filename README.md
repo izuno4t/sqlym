@@ -2,12 +2,18 @@
 
 [日本語](README.ja.md)
 
-A SQL template engine for Python. Inspired by Java's [Clione-SQL](https://github.com/tauty/clione-sql) / [Doma2](https://github.com/domaframework/doma), it provides a 2-way SQL parser and row-to-object mapping.
+A SQL template engine for Python. Inspired by Java's
+[Clione-SQL](https://github.com/tauty/clione-sql) /
+[Doma2](https://github.com/domaframework/doma), it provides a 2-way SQL parser
+and row-to-object mapping.
 
-- **SQL-first** — Write SQL directly, not through an ORM. sqly never auto-generates SQL
+- **SQL-first** — Write SQL directly, not through an ORM. sqly never
+  auto-generates SQL
 - **2-way SQL** — SQL files remain directly executable by DB tools
-- **Zero dependencies** — Core runs on the Python standard library only (Pydantic is optional)
-- **Flexible mapping** — Auto-mapping for dataclass / Pydantic, or bring your own function
+- **Zero dependencies** — Core runs on the Python standard library only
+  (Pydantic is optional)
+- **Flexible mapping** — Auto-mapping for dataclass / Pydantic, or bring your
+  own function
 
 ## Quick Start
 
@@ -57,7 +63,11 @@ mapper = create_mapper(Employee)
 # Lines with None parameters are automatically removed
 result = executor.query(
     "sql/employee/find_by_dept.sql",
-    {"id": 100, "dept_id": None, "status": "active"},  # dept_id line is removed
+    {
+        "id": 100,
+        "dept_id": None,
+        "status": "active",
+    },  # dept_id line is removed
     mapper=mapper
 )
 
@@ -71,7 +81,8 @@ For the full SQL syntax reference, see [SQL Syntax](SQL_SYNTAX.md).
 
 ### 2-way SQL (Clione-SQL Style)
 
-Parameters are written as SQL comments. The SQL file can be executed directly by DB tools.
+Parameters are written as SQL comments. The SQL file can be executed directly
+by DB tools.
 
 ```sql
 -- None removes the line ($ prefix)
@@ -92,7 +103,8 @@ WHERE
         status = /* $status1 */'a'
         OR status = /* $status2 */'b'
     )
--- If both status1 and status2 are None, the entire parenthesized block is removed
+-- If both status1 and status2 are None, the entire parenthesized block is
+-- removed
 ```
 
 ### Automatic IN Clause Expansion
@@ -112,7 +124,10 @@ config:
 from sqly import config
 
 config.ERROR_INCLUDE_SQL = False
+config.ERROR_MESSAGE_LANGUAGE = "en"
 ```
+
+Set `ERROR_MESSAGE_LANGUAGE` to `ja` or `en`.
 
 ### Mappers
 
@@ -155,27 +170,29 @@ class Employee:
 Supports SQLite, PostgreSQL, MySQL, and Oracle.
 
 | RDBMS | Driver | Placeholder | Extras |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | SQLite | [sqlite3](https://docs.python.org/3/library/sqlite3.html) (stdlib) | `?` | — |
 | PostgreSQL | [psycopg](https://www.psycopg.org/) 3.1+ | `%s` | `sqly[postgresql]` |
 | MySQL | [PyMySQL](https://pymysql.readthedocs.io/) 1.1+ | `%s` | `sqly[mysql]` |
 | Oracle | [python-oracledb](https://python-oracledb.readthedocs.io/) 3.0+ | `:name` | `sqly[oracle]` |
 
-For RDBMS other than SQLite, install with extras. The driver will be installed automatically.
+For RDBMS other than SQLite, install with extras. The driver will be installed
+automatically.
 
 ```bash
 pip install sqly[postgresql]
 ```
 
 | Feature | Description |
-|---|---|
-| LIKE escaping | Handles differences in LIKE escape characters across databases |
-| IN clause limit | Automatically splits when exceeding Oracle's 1000-element limit |
-| RDBMS-specific SQL file loading | Falls back from `find.sql-oracle` to `find.sql` |
+| --- | --- |
+| LIKE escaping | Handles LIKE escape differences across databases |
+| IN clause limit | Splits when exceeding Oracle's 1000-element limit |
+| RDBMS-specific SQL file loading | Fallback: `find.sql-oracle` → `find.sql` |
 
-When SQL syntax differs across databases, you can provide database-specific SQL files:
+When SQL syntax differs across databases, you can provide database-specific SQL
+files:
 
-```
+```text
 sql/employee/
 ├── find.sql              # Common SQL
 ├── find.sql-oracle       # Oracle-specific (loaded preferentially)
@@ -195,9 +212,13 @@ Write SQL directly or combine with other libraries.
 
 ## Acknowledgments
 
-sqly's 2-way SQL parser is based on the design of [Clione-SQL](https://github.com/tauty/clione-sql) by tauty. The four rules for line-based SQL processing, indent-driven parent-child relationships, and parameter comment syntax all originate from Clione-SQL.
+sqly's 2-way SQL parser is based on the design of
+[Clione-SQL](https://github.com/tauty/clione-sql) by tauty. The four rules for
+line-based SQL processing, indent-driven parent-child relationships, and
+parameter comment syntax all originate from Clione-SQL.
 
-The dialect design and RDBMS-specific behavior handling draw from [Doma2](https://github.com/domaframework/doma) by the Doma Framework team.
+The dialect design and RDBMS-specific behavior handling draw from
+[Doma2](https://github.com/domaframework/doma) by the Doma Framework team.
 
 We are grateful to both projects for their pioneering work in 2-way SQL.
 

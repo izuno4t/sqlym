@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from sqly.exceptions import SqlParseError
 from sqly import config
+from sqly.exceptions import SqlParseError
 from sqly.parser.line_unit import LineUnit
 from sqly.parser.tokenizer import tokenize
 
@@ -182,9 +182,11 @@ class TwoWaySQLParser:
                             # IN 句上限超過: (col IN (...) OR col IN (...)) に分割
                             extracted = self._extract_in_clause_column(line, token.start)
                             if extracted is None:
-                                msg = f"IN句分割の列式を抽出できません: line={unit.line_number}"
-                                if config.ERROR_INCLUDE_SQL:
-                                    msg = f"{msg} sql='{line.strip()}'"
+                                msg = self._format_error(
+                                    "in_clause_column_unresolved",
+                                    line_number=unit.line_number,
+                                    sql_line=line,
+                                )
                                 raise SqlParseError(msg)
                             col_expr, col_start = extracted
                             if is_named:
@@ -362,6 +364,23 @@ class TwoWaySQLParser:
         )
 
         return sql
+
+    @staticmethod
+    def _format_error(key: str, *, line_number: int, sql_line: str) -> str:
+        messages = {
+            "ja": {
+                "in_clause_column_unresolved": "IN句分割の列式を抽出できません",
+            },
+            "en": {
+                "in_clause_column_unresolved": "Failed to extract column expression for IN clause split",
+            },
+        }
+        lang = config.ERROR_MESSAGE_LANGUAGE
+        base = messages.get(lang, messages["ja"]).get(key, key)
+        msg = f"{base}: line={line_number}"
+        if config.ERROR_INCLUDE_SQL:
+            msg = f"{msg} sql='{sql_line.strip()}'"
+        return msg
 
     @staticmethod
     def _extract_in_clause_column(line: str, token_start: int) -> tuple[str, int] | None:
