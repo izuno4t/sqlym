@@ -79,12 +79,17 @@ class DataclassMapper:
 
     def map_row(self, row: dict[str, Any]) -> Any:
         """1行をエンティティに変換."""
+        row_lower = {k.lower(): v for k, v in row.items()}
         kwargs: dict[str, Any] = {}
         for field_name, col_name in self._mapping.items():
             if col_name in row:
                 kwargs[field_name] = row[col_name]
+            elif col_name.lower() in row_lower:
+                kwargs[field_name] = row_lower[col_name.lower()]
             elif field_name in row:
                 kwargs[field_name] = row[field_name]
+            elif field_name.lower() in row_lower:
+                kwargs[field_name] = row_lower[field_name.lower()]
         return self.entity_cls(**kwargs)
 
     def map_rows(self, rows: list[dict[str, Any]]) -> list[Any]:
