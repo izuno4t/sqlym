@@ -37,6 +37,16 @@ class TestTokenizeRemovableParam:
         assert len(tokens) == 1
         assert tokens[0].default == "active"
 
+    def test_escaped_single_quote(self) -> None:
+        tokens = tokenize("WHERE name = /* $name */'O''Reilly'")
+        assert len(tokens) == 1
+        assert tokens[0].default == "'O''Reilly'"
+
+    def test_escaped_double_quote(self) -> None:
+        tokens = tokenize('WHERE note = /* $note */"A""B"')
+        assert len(tokens) == 1
+        assert tokens[0].default == '"A""B"'
+
 
 class TestTokenizeNonRemovableParam:
     """$なしパラメータ（削除不可）のトークン化を検証する."""

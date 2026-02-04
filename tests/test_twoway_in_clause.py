@@ -1,6 +1,9 @@
 """TwoWaySQLParser の IN句自動展開テスト."""
 
+import pytest
+
 from sqly.dialect import Dialect
+from sqly.exceptions import SqlParseError
 from sqly.parser.twoway import TwoWaySQLParser
 
 
@@ -186,3 +189,29 @@ class TestInClauseSplit:
         assert "ORDER BY id" in result.sql
         assert result.named_params["name"] == "Alice"
         assert len(result.named_params) == 1002  # name + 1001 ids
+
+    def test_split_with_function_expression(self) -> None:
+        """関数式の IN 句を分割できる."""
+        sql = "SELECT * FROM t WHERE UPPER(name) IN /* $ids */(1)"
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        result = parser.parse({"ids": ids})
+        assert result.sql.count("UPPER(name) IN") == 2
+        assert " OR " in result.sql
+
+    def test_split_with_quoted_identifier(self) -> None:
+        """引用符付き識別子の IN 句を分割できる."""
+        sql = 'SELECT * FROM t WHERE "User".id IN /* $ids */(1)'
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        result = parser.parse({"ids": ids})
+        assert result.sql.count('"User".id IN') == 2
+        assert " OR " in result.sql
+
+    def test_split_raises_when_column_unresolved(self) -> None:
+        """列式が抽出できない場合は例外."""
+        sql = "SELECT * FROM t WHERE id + 1 IN /* $ids */(1)"
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        with pytest.raises(SqlParseError):
+            parser.parse({"ids": ids})

@@ -11,8 +11,8 @@ from dataclasses import dataclass
 PARAM_PATTERN = re.compile(
     r"/\*\s*(\$)?(\w+)\s*\*/\s*"
     r"("
-    r"'[^']*'"  # 'string'
-    r'|"[^"]*"'  # "string"
+    r"'(?:''|[^'])*'"  # 'string' (SQL escape: '')
+    r'|"(?:\"\"|[^"])*"'  # "string" (SQL escape: "")
     r"|\d+(?:\.\d+)?"  # number
     r"|\w+"  # identifier
     r"|\([^)]*\)"  # (list)

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from sqly.exceptions import SqlParseError
 from sqly.parser.line_unit import LineUnit
 from sqly.parser.tokenizer import tokenize
 
@@ -178,9 +179,11 @@ class TwoWaySQLParser:
                     if isinstance(value, list):
                         if in_limit and len(value) > in_limit:
                             # IN 句上限超過: (col IN (...) OR col IN (...)) に分割
-                            col_match = re.search(r"([\w.]+)\s*$", line[: token.start])
-                            col_expr = col_match.group(1) if col_match else ""
-                            col_start = col_match.start(1) if col_match else token.start
+                            extracted = self._extract_in_clause_column(line, token.start)
+                            if extracted is None:
+                                msg = "IN句分割の列式を抽出できません"
+                                raise SqlParseError(msg)
+                            col_expr, col_start = extracted
                             if is_named:
                                 replacement, expanded = self._expand_in_clause_split_named(
                                     token.name, value, in_limit, col_expr,
@@ -356,3 +359,122 @@ class TwoWaySQLParser:
         )
 
         return sql
+
+    @staticmethod
+    def _extract_in_clause_column(line: str, token_start: int) -> tuple[str, int] | None:
+        """IN句分割用に列式を抽出する.
+
+        末尾が識別子/引用符付き識別子/関数呼び出し/括弧式の場合に対応する。
+        抽出できない場合は None を返す。
+        """
+        prefix = line[:token_start].rstrip()
+        if not prefix:
+            return None
+        end = len(prefix) - 1
+
+        if prefix[end] == ")":
+            open_idx = TwoWaySQLParser._find_matching_open_paren(prefix, end)
+            if open_idx is None:
+                return None
+            expr_start = open_idx
+            func_start = TwoWaySQLParser._parse_identifier_chain(prefix, open_idx - 1)
+            if func_start is not None:
+                expr_start = func_start
+            return prefix[expr_start : end + 1].strip(), expr_start
+
+        ident_start = TwoWaySQLParser._parse_identifier_chain(prefix, end)
+        if ident_start is None:
+            return None
+        return prefix[ident_start : end + 1].strip(), ident_start
+
+    @staticmethod
+    def _parse_identifier_chain(s: str, end: int) -> int | None:
+        """末尾の識別子/引用符付き識別子の連鎖を抽出して開始位置を返す."""
+        i = end
+        while i >= 0 and s[i].isspace():
+            i -= 1
+        if i < 0:
+            return None
+
+        start = TwoWaySQLParser._parse_identifier_segment(s, i)
+        if start is None:
+            return None
+        i = start - 1
+
+        while i >= 0:
+            if s[i].isspace():
+                return start
+            if s[i] != ".":
+                return start
+            i -= 1
+            seg_start = TwoWaySQLParser._parse_identifier_segment(s, i)
+            if seg_start is None:
+                return start
+            start = seg_start
+            i = start - 1
+
+        return start
+
+    @staticmethod
+    def _parse_identifier_segment(s: str, end: int) -> int | None:
+        """識別子セグメントを解析し開始位置を返す."""
+        if end < 0:
+            return None
+        if s[end] == '"':
+            i = end - 1
+            while i >= 0:
+                if s[i] == '"':
+                    if i - 1 >= 0 and s[i - 1] == '"':
+                        i -= 2
+                        continue
+                    return i
+                i -= 1
+            return None
+        if not TwoWaySQLParser._is_ident_char(s[end]):
+            return None
+        i = end
+        while i >= 0 and TwoWaySQLParser._is_ident_char(s[i]):
+            i -= 1
+        start = i + 1
+        if not s[start].isalpha() and s[start] != "_":
+            return None
+        return start
+
+    @staticmethod
+    def _is_ident_char(ch: str) -> bool:
+        return ch.isalnum() or ch in {"_", "$"}
+
+    @staticmethod
+    def _find_matching_open_paren(s: str, close_idx: int) -> int | None:
+        """close_idx に対応する '(' の位置を返す（簡易バランス）."""
+        depth = 0
+        in_single = False
+        in_double = False
+        i = close_idx
+        while i >= 0:
+            ch = s[i]
+            if ch == "'" and not in_double:
+                if i > 0 and s[i - 1] == "'":
+                    i -= 2
+                    continue
+                in_single = not in_single
+                i -= 1
+                continue
+            if ch == '"' and not in_single:
+                if i > 0 and s[i - 1] == '"':
+                    i -= 2
+                    continue
+                in_double = not in_double
+                i -= 1
+                continue
+            if in_single or in_double:
+                i -= 1
+                continue
+            if ch == ")":
+                depth += 1
+            elif ch == "(":
+                depth -= 1
+                if depth == 0:
+                    return i
+            i -= 1
+        return None

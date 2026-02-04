@@ -94,6 +94,15 @@ class TestSqlLoaderFileNotFound:
         with pytest.raises(SqlFileNotFoundError, match=r"nonexistent\.sql"):
             loader.load("nonexistent.sql")
 
+    def test_path_traversal_rejected(self, tmp_path: Path) -> None:
+        """base_path 外へのパスは拒否する."""
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        (tmp_path / "outside.sql").write_text("SELECT 1", encoding="utf-8")
+        loader = SqlLoader(base_dir)
+        with pytest.raises(SqlFileNotFoundError):
+            loader.load("../outside.sql")
+
 
 class TestSqlLoaderEncoding:
     """ファイルエンコーディング."""

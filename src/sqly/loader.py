@@ -26,8 +26,12 @@ class SqlLoader:
             SqlFileNotFoundError: ファイルが存在しない場合
 
         """
-        file_path = self.base_path / path
-        if not file_path.exists():
+        base_path = self.base_path.resolve()
+        file_path = (base_path / path).resolve()
+        if file_path != base_path and base_path not in file_path.parents:
+            msg = f"SQL file not found: {file_path}"
+            raise SqlFileNotFoundError(msg)
+        if not file_path.is_file():
             msg = f"SQL file not found: {file_path}"
             raise SqlFileNotFoundError(msg)
         return file_path.read_text(encoding="utf-8")
