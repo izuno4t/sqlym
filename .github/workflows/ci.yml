@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --dev
+      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/
+
+  test-sqlite:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --dev
+      - run: uv run pytest -m "not postgresql and not mysql and not oracle" -v
+
+  test-postgresql:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sqly
+          POSTGRES_PASSWORD: sqly_test_pass
+          POSTGRES_DB: sqly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sqly -d sqly_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SQLY_TEST_POSTGRESQL_URL: postgresql://sqly:sqly_test_pass@localhost:5432/sqly_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --dev
+      - run: uv run pytest -m postgresql -v
+
+  test-mysql:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: sqly_test_pass
+          MYSQL_USER: sqly
+          MYSQL_PASSWORD: sqly_test_pass
+          MYSQL_DATABASE: sqly_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u sqly -psqly_test_pass"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SQLY_TEST_MYSQL_URL: mysql+pymysql://sqly:sqly_test_pass@localhost:3306/sqly_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --dev
+      - run: uv run pytest -m mysql -v
+
+  test-oracle:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    services:
+      oracle:
+        image: gvenzl/oracle-xe:21-slim
+        env:
+          ORACLE_PASSWORD: sqly_test_pass
+          APP_USER: sqly
+          APP_USER_PASSWORD: sqly_test_pass
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd "healthcheck.sh"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SQLY_TEST_ORACLE_DSN: localhost:1521/XEPDB1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --dev
+      - run: uv run pytest -m oracle -v

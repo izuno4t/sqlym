@@ -1,0 +1,63 @@
+{
+	"name": "sqly",
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	"containerEnv": {
+		"PYTHONUNBUFFERED": "1",
+		"PYTHONDONTWRITEBYTECODE": "1",
+		"UV_CACHE_DIR": "/home/vscode/.cache/uv",
+		"UV_LINK_MODE": "copy",
+		"UV_PROJECT_ENVIRONMENT": "/home/vscode/.venv",
+		"UV_COMPILE_BYTECODE": "1",
+		"CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+		"SQLY_TEST_POSTGRESQL_URL": "host=localhost port=5432 dbname=sqly_test user=sqly password=sqly_test_pass",
+		"SQLY_TEST_MYSQL_URL": "mysql://sqly:sqly_test_pass@localhost:3306/sqly_test",
+		"SQLY_TEST_ORACLE_DSN": "localhost:1521/XEPDB1"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"configureZshAsDefaultShell": true
+		},
+		"ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
+			"packages": "curl,wget,git,jq,ca-certificates,build-essential,ripgrep,fd-find"
+		},
+		"ghcr.io/va-h/devcontainers-features/uv:1": {
+			"shellAutocompletion": true
+		},
+		"ghcr.io/devcontainers/features/node:1": {},
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+	},
+	"runArgs": [
+		"--init",
+		"--rm"
+	],
+	"hostRequirements": {
+		"gpu": "optional"
+	},
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/home/vscode/.venv/bin/python",
+				"python.testing.pytestEnabled": true
+			},
+			"extensions": [
+				"ms-python.python",
+				"charliermarsh.ruff",
+				"eamodio.gitlens",
+				"tamasfe.even-better-toml",
+				"yzhang.markdown-all-in-one"
+			]
+		}
+	},
+	"remoteUser": "vscode",
+	"containerUser": "vscode",
+	"forwardPorts": [5432, 3306, 1521],
+	"initializeCommand": "mkdir -p ${localEnv:HOME}/.claude && touch ${localEnv:HOME}/.claude/CLAUDE.md && docker compose up -d --wait postgresql mysql oracle",
+	"mounts": [
+		"source=shell_history-${devcontainerId},target=/shell_history,type=volume",
+		"source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
+		"source=${localEnv:HOME}/.claude/CLAUDE.md,target=/home/vscode/.claude/CLAUDE.md,type=bind"
+	],
+	"postCreateCommand": "uv sync --dev",
+	"postStartCommand": "uv run pre-commit install"
+}
