@@ -54,7 +54,7 @@
 | TASK-029 | ✅ | Oracle統合テストを作成する | TASK-028 |
 | TASK-030 | ✅ | DevContainer・MakefileにOracleを追加する | TASK-027 |
 | TASK-031 | ✅ | GitHub Actions CIワークフローを作成する | TASK-022, TASK-028 |
-| TASK-032 | ⏳ | DialectクラスにDB固有プロパティを追加する（LIKEエスケープ、IN句上限、バックスラッシュエスケープ） | TASK-019 |
+| TASK-032 | ✅ | DialectクラスにDB固有プロパティを追加する（LIKEエスケープ、IN句上限、バックスラッシュエスケープ） | TASK-019 |
 | TASK-033 | ⏳ | IN句展開時のDB固有上限分割を実装しテストする（Oracle 1000件制限対応） | TASK-032, TASK-008 |
 | TASK-034 | ⏳ | LIKEパラメータのエスケープ処理を実装しテストする | TASK-032 |
 | TASK-035 | ⏳ | SqlLoaderにRDBMS別SQLファイルロードを追加しテストする | TASK-032, TASK-016 |

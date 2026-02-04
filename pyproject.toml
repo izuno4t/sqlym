@@ -94,6 +94,7 @@ ignore = [
     "Q000",   # Single quotes found when double quotes are preferred
     "Q001",   # Single quotes found for multi-line strings
     "Q002",   # Single quotes found for docstrings
+    "RUF001", # Checks for ambiguous Unicode characters in strings.
     "RUF002", # Checks for ambiguous Unicode characters in docstrings.
     "RUF003", # Checks for ambiguous Unicode characters in comments.
     "SIM105", # try-except-pass blocks
