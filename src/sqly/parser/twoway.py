@@ -50,6 +50,7 @@ class TwoWaySQLParser:
             msg = "dialect と placeholder は同時に指定できません"
             raise ValueError(msg)
         self.original_sql = sql
+        self.dialect = dialect
         self.placeholder = dialect.placeholder if dialect is not None else placeholder
 
     def parse(self, params: dict[str, Any]) -> ParsedSQL:
@@ -170,11 +171,30 @@ class TwoWaySQLParser:
 
             # トークンを後ろから置換(位置ずれ防止)
             line_params: list[Any] = []
+            in_limit = self.dialect.in_clause_limit if self.dialect else None
             for token in reversed(tokens):
                 value = params.get(token.name)
                 if token.is_in_clause:
                     if isinstance(value, list):
-                        if is_named:
+                        if in_limit and len(value) > in_limit:
+                            # IN 句上限超過: (col IN (...) OR col IN (...)) に分割
+                            col_match = re.search(r"([\w.]+)\s*$", line[: token.start])
+                            col_expr = col_match.group(1) if col_match else ""
+                            col_start = col_match.start(1) if col_match else token.start
+                            if is_named:
+                                replacement, expanded = self._expand_in_clause_split_named(
+                                    token.name, value, in_limit, col_expr,
+                                )
+                                line = line[:col_start] + replacement + line[token.end :]
+                                named_bind_params.update(expanded)
+                            else:
+                                replacement, expanded = self._expand_in_clause_split(
+                                    value, in_limit, col_expr,
+                                )
+                                line = line[:col_start] + replacement + line[token.end :]
+                                for v in reversed(expanded):
+                                    line_params.insert(0, v)
+                        elif is_named:
                             replacement, expanded = self._expand_in_clause_named(token.name, value)
                             line = line[: token.start] + replacement + line[token.end :]
                             named_bind_params.update(expanded)
@@ -237,6 +257,56 @@ class TwoWaySQLParser:
         named = {f"{name}_{i}": v for i, v in enumerate(values)}
         placeholders = ", ".join(f":{k}" for k in named)
         return f"IN ({placeholders})", named
+
+    def _expand_in_clause_split(
+        self, values: list[Any], limit: int, col_expr: str,
+    ) -> tuple[str, list[Any]]:
+        """IN句のリストを上限で分割してOR結合する.
+
+        Args:
+            values: バインドする値のリスト
+            limit: 1つのIN句あたりの要素数上限
+            col_expr: カラム式（例: "dept_id", "e.id"）
+
+        Returns:
+            (置換文字列, バインドパラメータリスト) のタプル
+
+        """
+        chunks = [values[i : i + limit] for i in range(0, len(values), limit)]
+        parts: list[str] = []
+        for chunk in chunks:
+            phs = ", ".join([self.placeholder] * len(chunk))
+            parts.append(f"{col_expr} IN ({phs})")
+        return "(" + " OR ".join(parts) + ")", list(values)
+
+    def _expand_in_clause_split_named(
+        self, name: str, values: list[Any], limit: int, col_expr: str,
+    ) -> tuple[str, dict[str, Any]]:
+        """IN句のリストを上限で分割して名前付きプレースホルダでOR結合する.
+
+        Args:
+            name: パラメータ名
+            values: バインドする値のリスト
+            limit: 1つのIN句あたりの要素数上限
+            col_expr: カラム式（例: "dept_id", "e.id"）
+
+        Returns:
+            (置換文字列, 名前付きバインドパラメータ辞書) のタプル
+
+        """
+        chunks = [values[i : i + limit] for i in range(0, len(values), limit)]
+        parts: list[str] = []
+        named: dict[str, Any] = {}
+        idx = 0
+        for chunk in chunks:
+            chunk_keys: list[str] = []
+            for v in chunk:
+                key = f"{name}_{idx}"
+                named[key] = v
+                chunk_keys.append(f":{key}")
+                idx += 1
+            parts.append(f"{col_expr} IN ({', '.join(chunk_keys)})")
+        return "(" + " OR ".join(parts) + ")", named
 
     def _clean_sql(self, sql: str) -> str:
         """不要なWHERE/AND/OR/空括弧を除去."""
