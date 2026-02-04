@@ -65,6 +65,8 @@ for emp in result:
     print(emp.name)
 ```
 
+For the full SQL syntax reference, see [SQL Syntax](SQL_SYNTAX.md).
+
 ## Features
 
 ### 2-way SQL (Clione-SQL Style)

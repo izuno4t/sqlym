@@ -65,6 +65,8 @@ for emp in result:
     print(emp.name)
 ```
 
+SQL テンプレートの書き方の詳細は [SQL 構文リファレンス](SQL_SYNTAX.ja.md) を参照してください。
+
 ## 主な機能
 
 ### 2way SQL（Clione-SQL 方式）
