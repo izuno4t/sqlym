@@ -347,6 +347,26 @@ RDBMS 固有の SQL 構文はこの仕組みで切り替えてください。
 
 ---
 
+## エラーメッセージ
+
+SQL パースに失敗した場合（例: IN 句分割ができない場合）、
+`SqlParseError` が発生します。デフォルトでは行番号と SQL 断片が
+含まれます。SQL 断片を表示したくない場合は設定で無効化してください。
+
+```python
+from sqly import config
+
+config.ERROR_INCLUDE_SQL = False
+```
+
+例:
+
+```text
+IN句分割の列式を抽出できません: line=12 sql='...'
+```
+
+---
+
 ## 実践例
 
 ### 複数条件の動的検索

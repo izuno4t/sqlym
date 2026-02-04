@@ -102,6 +102,19 @@ WHERE dept_id IN /* $dept_ids */(1, 2, 3)
 -- dept_ids=[10,20,30] → WHERE dept_id IN (?, ?, ?)
 ```
 
+### エラーメッセージ設定
+
+SQL パース中に発生した例外には、
+デフォルトで行番号が含まれます。
+SQL 断片を表示したくない場合は
+設定で無効化してください。
+
+```python
+from sqly import config
+
+config.ERROR_INCLUDE_SQL = False
+```
+
 ### マッパー
 
 ```python

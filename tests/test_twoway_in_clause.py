@@ -215,3 +215,27 @@ class TestInClauseSplit:
         parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
         with pytest.raises(SqlParseError):
             parser.parse({"ids": ids})
+
+    def test_split_error_includes_sql_when_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """設定が有効ならSQL断片を含める."""
+        from sqly import config
+
+        monkeypatch.setattr(config, "ERROR_INCLUDE_SQL", True)
+        sql = "SELECT * FROM t WHERE id + 1 IN /* $ids */(1)"
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        with pytest.raises(SqlParseError, match=r"line=1 sql='SELECT \* FROM t WHERE id \+ 1 IN"):
+            parser.parse({"ids": ids})
+
+    def test_split_error_excludes_sql_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """設定が無効ならSQL断片を含めない."""
+        from sqly import config
+
+        monkeypatch.setattr(config, "ERROR_INCLUDE_SQL", False)
+        sql = "SELECT * FROM t WHERE id + 1 IN /* $ids */(1)"
+        ids = list(range(1, 1002))
+        parser = TwoWaySQLParser(sql, dialect=Dialect.ORACLE)
+        with pytest.raises(SqlParseError) as excinfo:
+            parser.parse({"ids": ids})
+        assert "sql=" not in str(excinfo.value)
+        assert "line=1" in str(excinfo.value)

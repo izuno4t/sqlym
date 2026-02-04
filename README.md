@@ -102,6 +102,18 @@ WHERE dept_id IN /* $dept_ids */(1, 2, 3)
 -- dept_ids=[10,20,30] → WHERE dept_id IN (?, ?, ?)
 ```
 
+### Error Message Settings
+
+Errors raised during SQL parsing include the line number by default.
+If you want to hide the SQL snippet from error messages, disable it via
+config:
+
+```python
+from sqly import config
+
+config.ERROR_INCLUDE_SQL = False
+```
+
 ### Mappers
 
 ```python

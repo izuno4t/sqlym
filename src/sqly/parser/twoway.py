@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from sqly.exceptions import SqlParseError
+from sqly import config
 from sqly.parser.line_unit import LineUnit
 from sqly.parser.tokenizer import tokenize
 
@@ -181,7 +182,9 @@ class TwoWaySQLParser:
                             # IN 句上限超過: (col IN (...) OR col IN (...)) に分割
                             extracted = self._extract_in_clause_column(line, token.start)
                             if extracted is None:
-                                msg = "IN句分割の列式を抽出できません"
+                                msg = f"IN句分割の列式を抽出できません: line={unit.line_number}"
+                                if config.ERROR_INCLUDE_SQL:
+                                    msg = f"{msg} sql='{line.strip()}'"
                                 raise SqlParseError(msg)
                             col_expr, col_start = extracted
                             if is_named:

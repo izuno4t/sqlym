@@ -346,6 +346,26 @@ Use this mechanism for RDBMS-specific SQL syntax such as pagination (`LIMIT/OFFS
 
 ---
 
+## Error Messages
+
+When SQL parsing fails (e.g., invalid IN clause split), sqly raises
+`SqlParseError`. By default, the error message includes the line number and a
+SQL snippet. To hide the SQL snippet, disable it via config:
+
+```python
+from sqly import config
+
+config.ERROR_INCLUDE_SQL = False
+```
+
+Example:
+
+```text
+IN句分割の列式を抽出できません: line=12 sql='...'
+```
+
+---
+
 ## Examples
 
 ### Dynamic Search with Multiple Conditions
