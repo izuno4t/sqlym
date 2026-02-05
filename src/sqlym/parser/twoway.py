@@ -137,9 +137,15 @@ class TwoWaySQLParser:
     def _evaluate_params(self, units: list[LineUnit], params: dict[str, Any]) -> None:
         """パラメータを評価して行の削除を決定(Rule 4).
 
-        $付き(removable)パラメータの値が negative の場合、
+        $付き(removable) または &付き(bindless) パラメータの値が negative の場合、
         その行を削除対象としてマークする。
         非 removable パラメータは negative でも行を削除しない（NULL バインド）。
+
+        修飾記号:
+        - $ : removable（negative時に行削除）
+        - & : bindless（negative時に行削除、positive時はプレースホルダなし）
+        - ! : negation（negative/positive 判定を反転）
+        - @ : required（negative時に例外をスロー）
 
         negative とは: None, False, 空リスト, 全要素が negative のリスト
         """
@@ -148,7 +154,36 @@ class TwoWaySQLParser:
                 continue
             tokens = tokenize(unit.content)
             for token in tokens:
-                if token.removable and is_negative(params.get(token.name)):
+                value = params.get(token.name)
+                value_is_negative = is_negative(value)
+
+                # ! 修飾子: negative/positive を反転
+                if token.negated:
+                    value_is_negative = not value_is_negative
+
+                # @ 修飾子: negative 時に例外
+                if token.required and value_is_negative:
+                    msg = self._format_error(
+                        "required_param_missing",
+                        line_number=unit.line_number,
+                        sql_line=unit.content,
+                        param_name=token.name,
+                    )
+                    raise SqlParseError(msg)
+
+                # フォールバックチェーンの評価
+                if token.fallback and token.fallback_names:
+                    # 全てのフォールバックパラメータが negative かチェック
+                    all_negative = all(
+                        is_negative(params.get(name)) for name in token.fallback_names
+                    )
+                    if all_negative:
+                        unit.removed = True
+                        break
+                    continue
+
+                # $ または & 修飾子: negative 時に行削除
+                if (token.removable or token.bindless) and value_is_negative:
                     unit.removed = True
                     break
 
@@ -205,7 +240,13 @@ class TwoWaySQLParser:
             line_params: list[Any] = []
             in_limit = self.dialect.in_clause_limit if self.dialect else None
             for token in reversed(tokens):
-                value = params.get(token.name)
+                value = self._resolve_value(token, params)
+
+                # & 修飾子（bindless）: プレースホルダを追加せずコメントを除去
+                if token.bindless:
+                    line = line[: token.start] + line[token.end :]
+                    continue
+
                 if token.is_in_clause:
                     if isinstance(value, list):
                         if in_limit and len(value) > in_limit:
@@ -268,6 +309,35 @@ class TwoWaySQLParser:
             result_lines.append(indent_str + line)
 
         return "\n".join(result_lines), bind_params, named_bind_params
+
+    def _resolve_value(
+        self,
+        token: Any,
+        params: dict[str, Any],
+    ) -> Any:
+        """トークンに対応する値を解決する.
+
+        ? 修飾子（fallback）の場合、フォールバックチェーンを左から順に
+        評価し、最初の positive な値を返す。
+
+        Args:
+            token: パラメータトークン
+            params: パラメータ辞書
+
+        Returns:
+            解決された値
+
+        """
+        # フォールバックチェーンの評価
+        if token.fallback and token.fallback_names:
+            for name in token.fallback_names:
+                value = params.get(name)
+                if not is_negative(value):
+                    return value
+            # 全て negative の場合は None を返す（行削除済みのはず）
+            return None
+
+        return params.get(token.name)
 
     def _expand_in_clause(self, values: list[Any]) -> tuple[str, list[Any]]:
         """IN句のリストをプレースホルダに展開する.
@@ -359,8 +429,12 @@ class TwoWaySQLParser:
         return "(" + " OR ".join(parts) + ")", named
 
     def _clean_sql(self, sql: str) -> str:
-        """不要なWHERE/AND/OR/空括弧を除去."""
+        """不要なWHERE/AND/OR/空括弧/行末区切り/孤立UNION行を除去."""
         lines = sql.split("\n")
+
+        # 0. 孤立した区切り行（UNION/UNION ALL/EXCEPT/INTERSECT）を除去
+        # これらの行は前後に有効な SELECT が必要
+        lines = self._remove_orphan_set_operators(lines)
 
         # 1. 対応する開き括弧がない ')' だけの行を除去
         paren_stack: list[int] = []
@@ -380,7 +454,19 @@ class TwoWaySQLParser:
         lines = [line for i, line in enumerate(lines) if i not in remove_indices]
         sql = "\n".join(lines)
 
-        # 2. WHERE/HAVING 直後の先頭 AND/OR を除去
+        # 2. 行末の AND/OR を除去（次の行が削除された場合に残る）
+        sql = re.sub(
+            r"[ \t]+(?:AND|OR)[ \t]*$",
+            "",
+            sql,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+
+        # 3. 行末のカンマを除去（次の行が削除された場合に残る）
+        # ただし、括弧内の最後の要素のカンマのみ（SELECT句等は除外）
+        sql = self._remove_trailing_commas(sql)
+
+        # 4. WHERE/HAVING 直後の先頭 AND/OR を除去
         sql = re.sub(
             r"(\b(?:WHERE|HAVING)\b[ \t]*\n(?:[ \t]*\n)*)([ \t]+)(?:AND|OR)\b[ \t]+",
             r"\1\2",
@@ -388,7 +474,7 @@ class TwoWaySQLParser:
             flags=re.IGNORECASE,
         )
 
-        # 3. 条件のない孤立 WHERE/HAVING を除去（SQL末尾）
+        # 5. 条件のない孤立 WHERE/HAVING を除去（SQL末尾）
         sql = re.sub(
             r"\n?[ \t]*\b(?:WHERE|HAVING)\b[ \t]*(?:\n[ \t]*)*$",
             "",
@@ -396,7 +482,7 @@ class TwoWaySQLParser:
             flags=re.IGNORECASE,
         )
 
-        # 4. 条件のない WHERE/HAVING を除去（後続に別のSQL句がある場合）
+        # 6. 条件のない WHERE/HAVING を除去（後続に別のSQL句がある場合）
         next_clause = r"ORDER|GROUP|LIMIT|UNION|EXCEPT|INTERSECT|FETCH|OFFSET|FOR"
         sql = re.sub(
             rf"[ \t]*\b(?:WHERE|HAVING)\b[ \t]*\n(?=[ \t]*\b(?:{next_clause})\b)",
@@ -407,21 +493,121 @@ class TwoWaySQLParser:
 
         return sql
 
+    def _remove_trailing_commas(self, sql: str) -> str:
+        """閉じ括弧の直前にある行末カンマを除去する."""
+        lines = sql.split("\n")
+        result: list[str] = []
+
+        for i, line in enumerate(lines):
+            stripped = line.rstrip()
+            # 行末がカンマで終わっていて、後続の非空行が ) で始まる場合
+            if stripped.endswith(","):
+                # 後続行を探す
+                for j in range(i + 1, len(lines)):
+                    next_stripped = lines[j].strip()
+                    if next_stripped:
+                        if next_stripped.startswith(")"):
+                            # カンマを除去
+                            line = stripped[:-1] + line[len(stripped) :]
+                        break
+            result.append(line)
+
+        return "\n".join(result)
+
+    def _remove_orphan_set_operators(self, lines: list[str]) -> list[str]:
+        """孤立した集合演算子行（UNION/EXCEPT/INTERSECT）を除去する.
+
+        集合演算子は前後に有効なクエリ（SELECT等）が必要。
+        処理順序:
+        1. 前後に有効なクエリがない集合演算子を除去（繰り返し）
+        2. 連続する集合演算子は最初の1つだけ残す
+        """
+        set_op_pattern = re.compile(
+            r"^\s*(?:UNION\s+ALL|UNION|EXCEPT|INTERSECT)\s*$",
+            re.IGNORECASE,
+        )
+
+        def is_set_operator(line: str) -> bool:
+            return set_op_pattern.match(line) is not None
+
+        def find_valid_query_before(idx: int, lines_: list[str]) -> bool:
+            """インデックス前に有効なクエリ行があるか確認."""
+            for j in range(idx - 1, -1, -1):
+                stripped = lines_[j].strip()
+                if stripped and not is_set_operator(lines_[j]):
+                    return True
+            return False
+
+        def find_valid_query_after(idx: int, lines_: list[str]) -> bool:
+            """インデックス後に有効なクエリ行があるか確認."""
+            for j in range(idx + 1, len(lines_)):
+                stripped = lines_[j].strip()
+                if stripped and not is_set_operator(lines_[j]):
+                    return True
+            return False
+
+        # フェーズ1: 前後に有効なクエリがない集合演算子を除去
+        changed = True
+        while changed:
+            changed = False
+            result: list[str] = []
+
+            for i, line in enumerate(lines):
+                if not is_set_operator(line):
+                    result.append(line)
+                    continue
+
+                has_before = find_valid_query_before(i, lines)
+                has_after = find_valid_query_after(i, lines)
+
+                if has_before and has_after:
+                    result.append(line)
+                else:
+                    changed = True
+
+            lines = result
+
+        # フェーズ2: 連続する集合演算子は最初の1つだけ残す
+        result = []
+        prev_was_set_op = False
+        for line in lines:
+            if is_set_operator(line):
+                if not prev_was_set_op:
+                    result.append(line)
+                    prev_was_set_op = True
+                # 連続する場合はスキップ
+            else:
+                result.append(line)
+                if line.strip():
+                    prev_was_set_op = False
+
+        return result
+
     @staticmethod
-    def _format_error(key: str, *, line_number: int, sql_line: str) -> str:
+    def _format_error(
+        key: str,
+        *,
+        line_number: int,
+        sql_line: str,
+        param_name: str | None = None,
+    ) -> str:
         messages = {
             "ja": {
                 "in_clause_column_unresolved": "IN句分割の列式を抽出できません",
+                "required_param_missing": "必須パラメータが指定されていません",
             },
             "en": {
                 "in_clause_column_unresolved": (
                     "Failed to extract column expression for IN clause split"
                 ),
+                "required_param_missing": "Required parameter is missing",
             },
         }
         lang = config.ERROR_MESSAGE_LANGUAGE
         base = messages.get(lang, messages["ja"]).get(key, key)
         msg = f"{base}: line={line_number}"
+        if param_name:
+            msg = f"{msg} param='{param_name}'"
         if config.ERROR_INCLUDE_SQL:
             msg = f"{msg} sql='{sql_line.strip()}'"
         return msg

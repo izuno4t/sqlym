@@ -20,6 +20,7 @@
     "conftest",
     "RDBMS",
     "savepoint",
+    "bindless",
     "classmethod",
     "staticmethod",
     "elif",
