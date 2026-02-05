@@ -1,4 +1,4 @@
-.PHONY: install test lint format lint-fix pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all build release-test release
+.PHONY: install test lint format lint-fix spell pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all build release-test release
 
 install:
 	uv sync --dev
@@ -17,6 +17,9 @@ format:
 
 lint-fix:
 	uv run ruff check . --fix
+
+spell:
+	npx cspell "**/*.py" "**/*.md" --no-progress
 
 pre-commit:
 	uv run pre-commit run --all-files
