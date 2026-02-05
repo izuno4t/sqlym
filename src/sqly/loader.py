@@ -20,7 +20,7 @@ class SqlLoader:
     def load(self, path: str, *, dialect: Dialect | None = None) -> str:
         """SQL ファイルを読み込む.
 
-        dialect が指定された場合、まず RDBMS 固有ファイル（例: ``find.sql-oracle``）を
+        dialect が指定された場合、まず RDBMS 固有ファイル（例: ``find.oracle.sql``）を
         探し、存在しなければ汎用ファイル（例: ``find.sql``）にフォールバックする。
 
         Args:
@@ -35,14 +35,14 @@ class SqlLoader:
 
         Examples:
             >>> loader = SqlLoader("sql")
-            >>> # sql/find.sql-oracle があれば優先、なければ sql/find.sql
+            >>> # sql/find.oracle.sql があれば優先、なければ sql/find.sql
             >>> sql = loader.load("find.sql", dialect=Dialect.ORACLE)
 
         """
         base_path = self.base_path.resolve()
 
         if dialect is not None:
-            dialect_path = f"{path}-{dialect._dialect_id}"
+            dialect_path = self._dialect_specific_path(path, dialect._dialect_id)
             dialect_file_path = (base_path / dialect_path).resolve()
             if self._is_valid_path(base_path, dialect_file_path):
                 return dialect_file_path.read_text(encoding="utf-8")
@@ -59,3 +59,14 @@ class SqlLoader:
         if file_path != base_path and base_path not in file_path.parents:
             return False
         return file_path.is_file()
+
+    @staticmethod
+    def _dialect_specific_path(path: str, dialect_id: str) -> str:
+        """Dialect 固有のファイルパスを生成する.
+
+        ``find.sql`` → ``find.oracle.sql`` のように変換する。
+        """
+        if "." in path:
+            base, ext = path.rsplit(".", 1)
+            return f"{base}.{dialect_id}.{ext}"
+        return f"{path}.{dialect_id}"

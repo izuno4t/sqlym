@@ -126,11 +126,11 @@ def dialect_sql_dir(tmp_path: Path) -> Path:
     # 汎用ファイル
     (tmp_path / "find.sql").write_text("SELECT * FROM t", encoding="utf-8")
     # Oracle 固有
-    (tmp_path / "find.sql-oracle").write_text(
+    (tmp_path / "find.oracle.sql").write_text(
         "SELECT * FROM t WHERE ROWNUM <= 10", encoding="utf-8"
     )
     # PostgreSQL 固有
-    (tmp_path / "find.sql-postgresql").write_text(
+    (tmp_path / "find.postgresql.sql").write_text(
         "SELECT * FROM t LIMIT 10", encoding="utf-8"
     )
     # 汎用のみ（dialect固有なし）
@@ -139,7 +139,7 @@ def dialect_sql_dir(tmp_path: Path) -> Path:
     sub_dir = tmp_path / "employee"
     sub_dir.mkdir()
     (sub_dir / "find.sql").write_text("SELECT * FROM employees", encoding="utf-8")
-    (sub_dir / "find.sql-mysql").write_text(
+    (sub_dir / "find.mysql.sql").write_text(
         "SELECT * FROM employees LIMIT 10", encoding="utf-8"
     )
     return tmp_path
@@ -194,10 +194,10 @@ class TestSqlLoaderDialect:
     def test_all_dialects_suffix(self, tmp_path: Path) -> None:
         """全 Dialect のサフィックス形式を検証."""
         (tmp_path / "test.sql").write_text("generic", encoding="utf-8")
-        (tmp_path / "test.sql-sqlite").write_text("sqlite", encoding="utf-8")
-        (tmp_path / "test.sql-postgresql").write_text("postgresql", encoding="utf-8")
-        (tmp_path / "test.sql-mysql").write_text("mysql", encoding="utf-8")
-        (tmp_path / "test.sql-oracle").write_text("oracle", encoding="utf-8")
+        (tmp_path / "test.sqlite.sql").write_text("sqlite", encoding="utf-8")
+        (tmp_path / "test.postgresql.sql").write_text("postgresql", encoding="utf-8")
+        (tmp_path / "test.mysql.sql").write_text("mysql", encoding="utf-8")
+        (tmp_path / "test.oracle.sql").write_text("oracle", encoding="utf-8")
         loader = SqlLoader(tmp_path)
         assert loader.load("test.sql", dialect=Dialect.SQLITE) == "sqlite"
         assert loader.load("test.sql", dialect=Dialect.POSTGRESQL) == "postgresql"
@@ -215,7 +215,7 @@ class TestSqlLoaderDialect:
         """Dialect 指定時もパストラバーサルを拒否."""
         base_dir = tmp_path / "base"
         base_dir.mkdir()
-        (tmp_path / "outside.sql-oracle").write_text("SELECT 1", encoding="utf-8")
+        (tmp_path / "outside.oracle.sql").write_text("SELECT 1", encoding="utf-8")
         loader = SqlLoader(base_dir)
         with pytest.raises(SqlFileNotFoundError):
             loader.load("../outside.sql", dialect=Dialect.ORACLE)

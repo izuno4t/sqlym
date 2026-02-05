@@ -200,9 +200,9 @@
 ### TASK-035
 
 - 補足: SqlLoader に RDBMS 別 SQL ファイルロード機能を追加する
-  - `load("find.sql", dialect=Dialect.ORACLE)` → まず `find.sql-oracle` を探し、なければ `find.sql` にフォールバック
+  - `load("find.sql", dialect=Dialect.ORACLE)` → まず `find.oracle.sql` を探し、なければ `find.sql` にフォールバック
   - Clione-SQL の `LoaderUtil.getNodeByPath(sqlPath, productName)` と同等
-- 注意: ファイル名サフィックスは `-{dialect_name}` 形式（例: `find.sql-postgresql`）
+- 注意: ファイル名形式は `{base}.{dialect}.sql`（例: `find.oracle.sql`、`find.postgresql.sql`）
 - 実装済み: `SqlLoader.load()` に `dialect` 引数追加、テスト（`tests/test_sql_loader.py`）
 
 ### TASK-036
