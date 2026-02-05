@@ -2,28 +2,29 @@
 
 ## 1. パッケージ構成
 
-```
+```text
 sqlym/
-├── __init__.py          # 公開API
-├── _parse.py            # parse_sql便利関数
+├── __init__.py          # 公開 API
+├── _parse.py            # parse_sql 便利関数
 ├── config.py            # エラーメッセージ設定
-├── dialect.py           # Dialect enum（RDBMS方言）
-├── escape_utils.py      # LIKEエスケープ等ユーティリティ
+├── dialect.py           # Dialect enum（RDBMS 方言）
+├── escape_utils.py      # LIKE エスケープ等ユーティリティ
 ├── exceptions.py        # 例外クラス
-├── loader.py            # SQLファイル読み込み
+├── loader.py            # SQL ファイル読み込み
+├── sqlym.py             # Sqlym 高レベル API
 ├── parser/
 │   ├── __init__.py
-│   ├── tokenizer.py     # SQLトークナイザー
+│   ├── tokenizer.py     # SQL トークナイザー
 │   ├── line_unit.py     # 行単位処理
-│   └── twoway.py        # 2way SQLパーサー本体
+│   └── twoway.py        # 2way SQL パーサー本体
 └── mapper/
     ├── __init__.py
-    ├── protocol.py      # RowMapperプロトコル
-    ├── dataclass.py     # dataclass用マッパー
-    ├── pydantic.py      # Pydantic用マッパー
+    ├── protocol.py      # RowMapper プロトコル
+    ├── dataclass.py     # dataclass 用マッパー
+    ├── pydantic.py      # Pydantic 用マッパー
     ├── column.py        # カラムマッピング
     ├── manual.py        # ManualMapper
-    └── factory.py       # create_mapperファクトリ
+    └── factory.py       # create_mapper ファクトリ
 ```
 
 ---
@@ -32,538 +33,281 @@ sqlym/
 
 ### 2.1 LineUnit（行単位）
 
-```python
-# sqlym/parser/line_unit.py
+**責務:** SQL の 1 行を表現し、親子関係と削除状態を管理する。
 
-from dataclasses import dataclass, field
+**主要属性:**
 
-@dataclass
-class LineUnit:
-    """1行を表すユニット（Clione-SQL Rule 1）"""
-    
-    line_number: int          # 元のSQL内での行番号
-    original: str             # 元の行文字列
-    indent: int               # インデント深さ
-    content: str              # インデント除去後の内容
-    children: list['LineUnit'] = field(default_factory=list)
-    parent: 'LineUnit | None' = None
-    removed: bool = False     # 削除フラグ
-    
-    @property
-    def is_empty(self) -> bool:
-        """空行かどうか"""
-        return self.indent < 0 or not self.content.strip()
-```
+- `line_number`: 元の SQL 内での行番号
+- `indent`: インデント深さ（親子関係の決定に使用）
+- `children` / `parent`: ツリー構造
+- `removed`: 削除フラグ
+
+**設計判断:**
+
+- Clione-SQL Rule 1「SQL は行単位で処理する」を実現
+- インデントで親子関係を表現（Rule 2）
+- `removed` フラグで削除をマーク後、ボトムアップで親に伝播（Rule 3）
 
 ### 2.2 TwoWaySQLParser
 
-```python
-# sqlym/parser/twoway.py
+**責務:** 2way SQL テンプレートをパースし、パラメータをバインドした SQL を生成する。
 
-import re
-from dataclasses import dataclass
-from typing import Any
+**処理フロー:**
 
-@dataclass
-class ParsedSQL:
-    """パース結果"""
-    sql: str
-    params: list[Any]                    # ?形式用
-    named_params: dict[str, Any]         # :name形式用
+1. 行をパースして LineUnit リスト作成
+2. インデントから親子関係構築（Rule 2）
+3. パラメータ評価、行の削除判定（Rule 4）
+4. 子が全削除なら親も削除（Rule 3）
+5. SQL 再構築
+6. 不要な WHERE/AND/OR/括弧を除去
 
+**設計判断:**
 
-class TwoWaySQLParser:
-    """Clione-SQL風 2way SQLパーサー"""
-    
-    # パラメータパターン
-    # /* $name */'default' : 削除可能
-    # /* name */'default'  : 削除不可
-    PARAM_PATTERN = re.compile(
-        r"/\*\s*(\$)?(\w+)\s*\*/\s*"
-        r"("
-        r"'[^']*'"           # 'string'
-        r'|"[^"]*"'          # "string"
-        r"|\d+(?:\.\d+)?"    # number
-        r"|\w+"              # identifier
-        r"|\([^)]*\)"        # (list)
-        r"|NULL"             # NULL
-        r")?"
-    )
-    
-    # IN句パターン
-    IN_PATTERN = re.compile(
-        r"\bIN\s*/\*\s*(\$)?(\w+)\s*\*/\s*\([^)]*\)",
-        re.IGNORECASE
-    )
-    
-    def __init__(self, sql: str, placeholder: str = "?"):
-        """
-        Args:
-            sql: SQLテンプレート
-            placeholder: プレースホルダ形式 ("?", "%s", ":name")
-        """
-        self.original_sql = sql
-        self.placeholder = placeholder
-    
-    def parse(self, params: dict[str, Any]) -> ParsedSQL:
-        """SQLをパースしてパラメータをバインド"""
-        # 1. 行をパースしてLineUnitリスト作成
-        units = self._parse_lines()
-        
-        # 2. インデントから親子関係構築（Rule 2）
-        self._build_tree(units)
-        
-        # 3. パラメータ評価、行の削除判定（Rule 4）
-        self._evaluate_params(units, params)
-        
-        # 4. 子が全削除なら親も削除（Rule 3）
-        self._propagate_removal(units)
-        
-        # 5. SQL再構築
-        sql, bind_params = self._rebuild_sql(units, params)
-        
-        # 6. 不要なWHERE/AND/OR/括弧を除去
-        sql = self._clean_sql(sql)
-        
-        return ParsedSQL(
-            sql=sql,
-            params=bind_params,
-            named_params=params,
-        )
-    
-    def _parse_lines(self) -> list[LineUnit]:
-        """行をパースしてLineUnitリストを作成"""
-        ...
-    
-    def _build_tree(self, units: list[LineUnit]) -> None:
-        """インデントに基づいて親子関係を構築"""
-        ...
-    
-    def _evaluate_params(self, units: list[LineUnit], params: dict) -> None:
-        """パラメータを評価して行の削除を決定"""
-        ...
-    
-    def _propagate_removal(self, units: list[LineUnit]) -> None:
-        """子が全削除なら親も削除（ボトムアップ処理）"""
-        ...
-    
-    def _rebuild_sql(self, units: list[LineUnit], params: dict) -> tuple[str, list]:
-        """削除されていない行からSQLを再構築"""
-        ...
-    
-    def _clean_sql(self, sql: str) -> str:
-        """不要なWHERE/AND/OR/空括弧を除去"""
-        ...
+- 正規表現でパラメータコメント `/* $name */value` を検出
+- IN 句は専用パターンで検出し、リストを展開
+- プレースホルダ形式は Dialect から取得（`?`, `%s`, `:name`）
+
+#### 2.2.1 パラメータ修飾記号の設計
+
+Clione-SQL 互換の修飾記号を実装。パース時に修飾記号を解析し、挙動を切り替える。
+
+| 修飾記号 | 処理                                 | 設計理由                  |
+| -------- | ------------------------------------ | ------------------------- |
+| `$`      | negative 時に行削除                  | 動的 WHERE 条件の基本機能 |
+| `&`      | negative 時に行削除、バインドなし    | フラグによる行の ON/OFF   |
+| `@`      | negative 時に例外                    | 必須パラメータの検証      |
+| `?`      | フォールバック                       | デフォルト値の連鎖        |
+| `!`      | 上記の否定                           | 条件の反転                |
+
+**negative/positive の拡張判定:**
+
+- `None` に加え、`False`、空リスト `[]`、全要素が negative のリストも negative として扱う
+- Clione-SQL の `ClioBlank` に相当する概念を Python の型に適用
+
+#### 2.2.2 補助関数の設計
+
+補助関数は `%` プレフィックスで識別し、専用のパーサーで処理する。
+
+| 関数             | 処理                     | 設計理由                 |
+| ---------------- | ------------------------ | ------------------------ |
+| `%concat` / `%C` | 文字列連結               | LIKE パターン構築        |
+| `%L`             | LIKE エスケープ + ESCAPE | SQL インジェクション防止 |
+| `%STR` / `%SQL`  | 直接埋め込み             | 動的カラム名等           |
+| `%if-%else-%end` | インライン条件分岐       | 1 行内での条件切り替え   |
+| `%include`       | SQL ファイルインクルード | SQL の再利用             |
+
+**設計判断:**
+
+- 補助関数はパラメータ置換の**前**に処理する
+- `%STR`/`%SQL` は SQL インジェクションのリスクがあるため、ドキュメントで警告
+
+#### 2.2.3 ブロック切り替えの設計
+
+`-- %IF` / `-- %ELSE` / `-- %END` は行コメント形式で、複数行の条件分岐を実現する。
+
+```sql
+-- %IF use_date
+    AND date >= /* $date_from */'2020-01-01'
+-- %ELSE
+    AND status = /* $status */'active'
+-- %END
 ```
 
-### 2.3 RowMapper Protocol
+**設計判断:**
 
-```python
-# sqlym/mapper/protocol.py
+- 行コメント形式を採用（DB ツールでそのまま実行可能）
+- ブロック内のインデントは保持
+- ネスト（`%IF` 内の `%IF`）は非サポート（Clione-SQL と同様）
 
-from typing import Protocol, TypeVar, Any, runtime_checkable
+### 2.3 マッパー階層
 
-T = TypeVar('T')
+**責務:** DB の行データを Python オブジェクトに変換する。
 
-@runtime_checkable
-class RowMapper(Protocol[T]):
-    """マッパーのインターフェース"""
-    
-    def map_row(self, row: dict[str, Any]) -> T:
-        """1行をエンティティに変換"""
-        ...
-    
-    def map_rows(self, rows: list[dict[str, Any]]) -> list[T]:
-        """複数行をエンティティのリストに変換"""
-        ...
+```text
+RowMapper (Protocol)
+├── DataclassMapper    # dataclass を自動マッピング
+├── PydanticMapper     # Pydantic BaseModel を自動マッピング
+└── ManualMapper       # ユーザー関数をラップ
 ```
 
-### 2.4 DataclassMapper
+**設計判断:**
 
-```python
-# sqlym/mapper/dataclass.py
+1. **Protocol ベースのインターフェース**
+   - `@runtime_checkable` で duck typing をサポート
+   - 外部ライブラリのマッパーも受け入れ可能
 
-from dataclasses import fields, is_dataclass
-from typing import TypeVar, Type, Any, get_type_hints, get_origin, get_args, Annotated
+2. **クラスレベルキャッシュ**
+   - `DataclassMapper._mapping_cache` でフィールド解析結果をキャッシュ
+   - 同じ dataclass の繰り返しマッピングを高速化
 
-from .column import Column
+3. **カラム名解決の優先順位**
+   - `Annotated[T, Column("X")]` > `@entity(column_map={})` >
+     `@entity(naming="...")` > フィールド名
+   - 柔軟性と明示性のバランス
 
-T = TypeVar('T')
+4. **Pydantic の遅延インポート**
+   - `create_mapper` 内で `hasattr(cls, 'model_validate')` で判定
+   - Pydantic 未インストール環境でもエラーにならない
 
-class DataclassMapper:
-    """dataclass用の自動マッパー"""
-    
-    # クラスごとのフィールドマッピングをキャッシュ
-    _mapping_cache: dict[type, dict[str, str]] = {}
-    
-    def __init__(self, entity_cls: Type[T]):
-        if not is_dataclass(entity_cls):
-            raise TypeError(f"{entity_cls} is not a dataclass")
-        
-        self.entity_cls = entity_cls
-        self._mapping = self._get_mapping(entity_cls)
-    
-    @classmethod
-    def _get_mapping(cls, entity_cls: type) -> dict[str, str]:
-        """フィールド名→カラム名のマッピングを取得（キャッシュ付き）"""
-        if entity_cls not in cls._mapping_cache:
-            cls._mapping_cache[entity_cls] = cls._build_mapping(entity_cls)
-        return cls._mapping_cache[entity_cls]
-    
-    @classmethod
-    def _build_mapping(cls, entity_cls: type) -> dict[str, str]:
-        """フィールド名→カラム名のマッピングを構築"""
-        hints = get_type_hints(entity_cls, include_extras=True)
-        column_map = getattr(entity_cls, '__column_map__', {})
-        naming = getattr(entity_cls, '__column_naming__', 'as_is')
-        
-        mapping = {}
-        
-        for f in fields(entity_cls):
-            field_name = f.name
-            
-            # 1. Annotated[..., Column("X")] をチェック
-            type_hint = hints.get(field_name)
-            if type_hint and get_origin(type_hint) is Annotated:
-                for arg in get_args(type_hint)[1:]:
-                    if isinstance(arg, Column):
-                        mapping[field_name] = arg.name
-                        break
-            
-            if field_name in mapping:
-                continue
-            
-            # 2. column_mapをチェック
-            if field_name in column_map:
-                mapping[field_name] = column_map[field_name]
-                continue
-            
-            # 3. namingルール適用
-            if naming == "snake_to_camel":
-                mapping[field_name] = cls._to_camel(field_name)
-            elif naming == "camel_to_snake":
-                mapping[field_name] = cls._to_snake(field_name)
-            else:
-                mapping[field_name] = field_name
-        
-        return mapping
-    
-    @staticmethod
-    def _to_camel(name: str) -> str:
-        """snake_case → camelCase"""
-        components = name.split('_')
-        return components[0] + ''.join(x.title() for x in components[1:])
-    
-    @staticmethod
-    def _to_snake(name: str) -> str:
-        """camelCase → snake_case"""
-        import re
-        return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
-    
-    def map_row(self, row: dict[str, Any]) -> T:
-        """1行をエンティティに変換"""
-        kwargs = {}
-        for field_name, col_name in self._mapping.items():
-            if col_name in row:
-                kwargs[field_name] = row[col_name]
-            elif field_name in row:
-                # フォールバック
-                kwargs[field_name] = row[field_name]
-        return self.entity_cls(**kwargs)
-    
-    def map_rows(self, rows: list[dict[str, Any]]) -> list[T]:
-        """複数行をエンティティのリストに変換"""
-        return [self.map_row(row) for row in rows]
+### 2.4 Sqlym（高レベル API）
+
+**責務:** SQL ファイルの読み込み、パース、実行、結果マッピングを統合する。
+
+**設計判断:**
+
+1. **Dialect 自動検出**
+   - `connection.__module__` から RDBMS を推測
+   - 検出できない場合は SQLite をデフォルト
+
+2. **トランザクション管理の委譲**
+   - `commit()` / `rollback()` は connection に委譲
+   - コンテキストマネージャも connection の `__enter__` / `__exit__` に委譲
+   - sqlym はトランザクションロジックを持たない
+
+3. **auto_commit モード**
+   - `execute()` 後に自動で `connection.commit()` を呼ぶ
+   - ツールやスクリプト向けの簡易モード
+
+### 2.5 SqlLoader
+
+**責務:** SQL ファイルを読み込み、Dialect に応じたファイル解決を行う。
+
+**設計判断:**
+
+1. **ファイル解決順序**
+   - `{path}.{dialect}.sql` を優先（例: `find.oracle.sql`）
+   - 見つからなければ `{path}.sql` にフォールバック
+
+2. **エンコーディング**
+   - UTF-8 固定（国際化対応）
+
+### 2.6 例外階層
+
+```text
+SqlyError (基底)
+├── SqlParseError      # SQL パースエラー（行番号付き）
+├── MappingError       # オブジェクトマッピングエラー
+└── SqlFileNotFoundError  # SQL ファイルが見つからない
 ```
 
-### 2.5 Column & entity デコレータ
+**設計判断:**
 
-```python
-# sqlym/mapper/column.py
-
-class Column:
-    """カラム名を指定するアノテーション"""
-    
-    def __init__(self, name: str):
-        self.name = name
-    
-    def __repr__(self):
-        return f"Column({self.name!r})"
-
-
-def entity(
-    cls: type | None = None,
-    *,
-    column_map: dict[str, str] | None = None,
-    naming: str = "as_is"
-):
-    """
-    エンティティデコレータ
-    
-    Args:
-        column_map: フィールド名→カラム名のマッピング
-        naming: 命名規則 ("as_is", "snake_to_camel", "camel_to_snake")
-    """
-    def decorator(cls):
-        cls.__column_map__ = column_map or {}
-        cls.__column_naming__ = naming
-        return cls
-    
-    if cls is not None:
-        return decorator(cls)
-    return decorator
-```
-
-### 2.6 create_mapper ファクトリ
-
-```python
-# sqlym/mapper/__init__.py
-
-from typing import TypeVar, Type, Callable, Any
-from dataclasses import is_dataclass
-
-from .protocol import RowMapper
-from .dataclass import DataclassMapper
-
-T = TypeVar('T')
-
-class ManualMapper:
-    """ユーザー提供の関数をラップするマッパー"""
-    
-    def __init__(self, func: Callable[[dict], Any]):
-        self._func = func
-    
-    def map_row(self, row: dict) -> Any:
-        return self._func(row)
-    
-    def map_rows(self, rows: list[dict]) -> list:
-        return [self._func(row) for row in rows]
-
-
-def create_mapper(
-    entity_cls: Type[T],
-    *,
-    mapper: RowMapper[T] | Callable[[dict], T] | None = None
-) -> RowMapper[T]:
-    """
-    マッパーを生成する
-    
-    Args:
-        entity_cls: エンティティクラス
-        mapper: 
-            - None: 自動判定
-            - Callable: 自前関数
-            - RowMapper: 自前マッパー
-    """
-    # 明示的に指定された場合
-    if mapper is not None:
-        if isinstance(mapper, RowMapper):
-            return mapper
-        if callable(mapper):
-            return ManualMapper(mapper)
-    
-    # 自動判定
-    if is_dataclass(entity_cls):
-        return DataclassMapper(entity_cls)
-    
-    # Pydantic判定
-    if hasattr(entity_cls, 'model_validate'):
-        from .pydantic import PydanticMapper
-        return PydanticMapper(entity_cls)
-    
-    raise TypeError(
-        f"Cannot create mapper for {entity_cls}. "
-        f"Use dataclass, Pydantic, or provide a custom mapper."
-    )
-```
-
-### 2.7 SQLファイルローダー
-
-```python
-# sqlym/loader.py
-
-from pathlib import Path
-
-class SqlLoader:
-    """SQLファイルの読み込み"""
-    
-    def __init__(self, base_path: str | Path = "sql"):
-        self.base_path = Path(base_path)
-    
-    def load(self, path: str) -> str:
-        """SQLファイルを読み込む"""
-        file_path = self.base_path / path
-        
-        if not file_path.exists():
-            raise SqlFileNotFoundError(f"SQL file not found: {file_path}")
-        
-        return file_path.read_text(encoding='utf-8')
-```
-
-### 2.8 例外クラス
-
-```python
-# sqlym/exceptions.py
-
-class SqlyError(Exception):
-    """sqlymの基底例外"""
-    pass
-
-class SqlParseError(SqlyError):
-    """SQLパースエラー"""
-    pass
-
-class MappingError(SqlyError):
-    """マッピングエラー"""
-    pass
-
-class SqlFileNotFoundError(SqlyError):
-    """SQLファイルが見つからない"""
-    pass
-```
+- すべて `SqlyError` を継承し、`except SqlyError` でまとめてキャッチ可能
+- `SqlParseError` は行番号と SQL 断片をエラーメッセージに含める
 
 ---
 
-## 3. 公開API
+## 3. 公開 API
 
-```python
-# sqlym/__init__.py
+公開 API の詳細は [SPEC.md](SPEC.md) を参照。
 
-from .parser.twoway import TwoWaySQLParser, ParsedSQL, parse_sql
-from .mapper import create_mapper, RowMapper, ManualMapper
-from .mapper.column import Column, entity
-from .loader import SqlLoader
-from .exceptions import SqlyError, SqlParseError, MappingError, SqlFileNotFoundError
+### 3.1 API 階層設計
 
-__all__ = [
-    # パーサー
-    "TwoWaySQLParser",
-    "ParsedSQL",
-    "parse_sql",
-    
-    # マッパー
-    "create_mapper",
-    "RowMapper",
-    "ManualMapper",
-    
-    # カラムマッピング
-    "Column",
-    "entity",
-    
-    # ローダー
-    "SqlLoader",
-    
-    # 例外
-    "SqlyError",
-    "SqlParseError",
-    "MappingError",
-    "SqlFileNotFoundError",
-]
-
-
-# 便利関数
-def parse_sql(sql: str, params: dict, *, placeholder: str = "?") -> ParsedSQL:
-    """SQLをパースする便利関数"""
-    parser = TwoWaySQLParser(sql, placeholder=placeholder)
-    return parser.parse(params)
+```text
+┌─────────────────────────────────────────────────┐
+│ Sqlym（高レベル API）                            │
+│   - SQL ファイル読み込み、パース、実行、マッピング   │
+│   - トランザクション管理は connection に委譲       │
+└───────────────┬─────────────────────────────────┘
+                │ 内部で使用
+┌───────────────┴─────────────────────────────────┐
+│ 低レベル API                                     │
+│   - parse_sql: SQL テンプレートのパース           │
+│   - SqlLoader: SQL ファイルの読み込み            │
+│   - create_mapper: 結果マッピング                │
+└─────────────────────────────────────────────────┘
 ```
+
+### 3.2 設計判断: 2 層 API
+
+**理由:**
+
+- 高レベル API（Sqlym）: 一般的なユースケースを簡潔に記述
+- 低レベル API: フレームワーク統合や特殊ケースに対応
+
+**トレードオフ:**
+
+- 高レベル API は connection に依存し、テストが難しくなる
+- 低レベル API は柔軟だが、使用コードが冗長になる
+
+この構成により、シンプルなアプリは Sqlym で完結し、
+Clean Architecture 等では低レベル API で Repository パターンを実装できる。
 
 ---
 
-## 4. 使用例
+## 4. テスト方針
 
-### 4.1 基本的な使い方
+### 4.1 テスト階層
 
-```python
-from dataclasses import dataclass
-from typing import Annotated
-import sqlite3
-
-from sqlym import parse_sql, create_mapper, Column, SqlLoader
-
-# エンティティ定義
-@dataclass
-class Employee:
-    id: int
-    name: Annotated[str, Column("EMP_NAME")]
-    dept_id: int | None = None
-
-# SQLファイル読み込み
-loader = SqlLoader("sql")
-sql_template = loader.load("employee/find_by_condition.sql")
-
-# パラメータ指定（Noneの行は削除される）
-params = {
-    "id": 100,
-    "name": None,      # この条件の行は削除
-    "dept_id": 10,
-}
-
-# SQL生成
-result = parse_sql(sql_template, params)
-print(result.sql)
-print(result.params)
-
-# DB実行
-conn = sqlite3.connect("test.db")
-conn.row_factory = sqlite3.Row
-cursor = conn.execute(result.sql, result.params)
-
-# マッピング
-mapper = create_mapper(Employee)
-employees = mapper.map_rows([dict(row) for row in cursor.fetchall()])
+```text
+tests/
+├── unit/                    # ユニットテスト（モック使用、高速）
+│   ├── parser/              # パーサーのユニットテスト
+│   │   ├── test_twoway_*.py # 各機能ごとのテスト
+│   │   └── test_tokenizer.py
+│   └── mapper/              # マッパーのユニットテスト
+│       ├── test_dataclass.py
+│       └── test_column.py
+└── integration/             # 統合テスト（実 DB 使用）
+    ├── test_sqlite.py       # SQLite（CI で常時実行）
+    ├── test_postgresql.py   # PostgreSQL（マーカー付き）
+    ├── test_mysql.py        # MySQL（マーカー付き）
+    └── test_oracle.py       # Oracle（マーカー付き）
 ```
 
-### 4.2 自前マッパー
+### 4.2 テスト対象
 
-```python
-# レガシーDBでカラム名が全然違う場合
-mapper = create_mapper(
-    Employee,
-    mapper=lambda row: Employee(
-        id=row['EMP_ID'],
-        name=row['EMP_NM'],
-        dept_id=row['DEPT_CD'] if row['DEPT_CD'] != 0 else None,
-    )
-)
-```
+| 対象            | テスト内容                                   |
+| --------------- | -------------------------------------------- |
+| LineUnit        | インデント計算、親子関係構築                 |
+| TwoWaySQLParser | パラメータ置換、行削除、IN 句展開、修飾記号  |
+| DataclassMapper | フィールドマッピング、型変換                 |
+| Column/entity   | カラム名解決、優先順位                       |
+| Sqlym           | query/execute の統合動作                     |
 
-### 4.3 Pydantic
+### 4.3 設計判断: RDBMS 別テストファイル
 
-```python
-from pydantic import BaseModel
+**理由:**
 
-class Employee(BaseModel):
-    id: int
-    name: str
-    dept_id: int | None = None
+- プレースホルダ形式が RDBMS ごとに異なる
+- LIKE エスケープや IN 句上限が異なる
+- CI 環境では SQLite のみ実行し、他は手動またはオプションマーカーで実行
 
-mapper = create_mapper(Employee)  # 自動でPydanticMapper
-```
+**トレードオフ:**
+
+- テストコードの重複が増える
+- ただし RDBMS 固有の挙動を確実にテストできる
 
 ---
 
-## 5. テスト方針
+## 5. Dialect 設計
 
-### 5.1 ユニットテスト
+### 5.1 対象 RDBMS の選択
 
-| 対象 | テスト内容 |
-|------|-----------|
-| LineUnit | インデント計算、親子関係構築 |
-| TwoWaySQLParser | パラメータ置換、行削除、IN句展開 |
-| DataclassMapper | フィールドマッピング、型変換 |
-| Column/entity | カラム名解決、優先順位 |
+#### 対象 RDBMS
 
-### 5.2 統合テスト
+| RDBMS      | 選択理由                                                           |
+| ---------- | ------------------------------------------------------------------ |
+| SQLite     | 組み込み DB。テスト・開発環境で必須。Python 標準ライブラリに含まれる |
+| PostgreSQL | OSS で最も機能が充実。クラウド対応（RDS, Cloud SQL 等）            |
+| MySQL      | 世界シェア最大級の OSS DB。Web アプリで広く使用                    |
+| Oracle     | エンタープライズ領域でのデファクト。Clione-SQL の主要ターゲット    |
 
-- SQLite を使った実際のDB操作
-- 各種プレースホルダ形式での動作確認
+#### 対象外とした RDBMS
 
----
+| RDBMS      | 対象外の理由                                 |
+| ---------- | -------------------------------------------- |
+| SQL Server | Python での利用が限定的。将来的に追加検討    |
+| MariaDB    | MySQL 互換のため MySQL ドライバーで対応可能  |
+| その他     | 需要があれば Issue で検討                    |
 
-## 6. Dialect 設計
+#### 選択基準
 
-### 6.1 設計方針
+1. **Python エコシステムでの普及度** - 安定したドライバーが存在すること
+2. **Clione-SQL との互換性** - 元ライブラリがサポートする RDBMS を優先
+3. **プレースホルダ形式の代表性** - `?`, `%s`, `:name` の 3 形式をカバー
+
+### 5.2 設計方針
 
 sqlym は Clione-SQL と同様に「SQL-first」のテンプレートエンジンである。
 SQL は開発者が直接記述し、エンジンはパラメータバインド・行削除・IN 句展開を担当する。
@@ -578,11 +322,11 @@ RDBMS ごとに構文が異なる場合は、SQL ファイルを分けて対応�
 
 Clione-SQL も同じ設計思想に基づき、Dialect が扱うのは以下の 3 点のみである：
 
-| 機能 | 理由 |
-|---|---|
-| LIKE エスケープ対象文字 | エンジンがパラメータ値をエスケープする際に対象文字が DB で異なる |
-| IN 句要素数上限 | エンジンが IN 句を展開する際に Oracle の 1000 件制限を超えないよう分割が必要 |
-| バックスラッシュのエスケープ文字扱い | エンジンが SQL 文字列リテラルをパースする際の解釈が DB で異なる |
+| 機能                       | 理由                                           |
+| -------------------------- | ---------------------------------------------- |
+| LIKE エスケープ対象文字    | エスケープ対象文字が DB で異なる               |
+| IN 句要素数上限            | Oracle の 1000 件制限を超えないよう分割が必要  |
+| バックスラッシュエスケープ | 文字列リテラルのパース時の解釈が DB で異なる   |
 
 加えて、SqlLoader による RDBMS 別 SQL ファイルロード機能を提供する。
 
@@ -595,136 +339,62 @@ Doma2 は ORM としてINSERT/UPDATE/DELETE/UPSERT 文を **自動生成** す�
 sqlym はこれらの SQL 生成機能を持たないため、Doma2 相当の Dialect は不要である。
 将来的に必要になった場合は Backlog（TASK.md 参照）として管理している。
 
-### 6.2 Dialect クラス設計
+### 5.3 Dialect クラス設計
 
-既存の `Dialect` enum を拡張し、DB 固有プロパティをメソッドとして追加する。
+`Dialect` enum で RDBMS ごとの差異を管理する。
 
-```python
-# sqlym/dialect.py
+| RDBMS      | プレースホルダ | IN 句上限 | バックスラッシュエスケープ |
+| ---------- | -------------- | --------- | -------------------------- |
+| SQLite     | `?`            | なし      | No                         |
+| PostgreSQL | `%s`           | なし      | Yes                        |
+| MySQL      | `%s`           | なし      | Yes                        |
+| Oracle     | `:name`        | 1000      | No                         |
 
-from __future__ import annotations
+**提供プロパティ:**
 
-import re
-from enum import Enum
+- `placeholder`: プレースホルダ形式
+- `like_escape_chars`: LIKE エスケープ対象文字（`#`, `%`, `_`）
+- `in_clause_limit`: IN 句要素数上限（Oracle のみ 1000）
+- `backslash_is_escape`: バックスラッシュがエスケープ文字か
 
+### 5.4 IN 句上限分割
 
-class Dialect(Enum):
-    """RDBMS ごとの SQL 方言."""
+`Dialect.in_clause_limit` が設定されている場合（Oracle の 1000 件制限）、
+IN 句の展開時に要素数が上限を超えると自動的に `OR` で分割する。
 
-    SQLITE = ("sqlite", "?")
-    POSTGRESQL = ("postgresql", "%s")
-    MYSQL = ("mysql", "%s")
-    ORACLE = ("oracle", ":name")
+**設計判断:**
 
-    def __init__(self, dialect_id: str, placeholder_fmt: str) -> None:
-        self._dialect_id = dialect_id
-        self._placeholder_fmt = placeholder_fmt
+- 分割時は括弧で囲み、`OR` で結合
+- 開発者が意識せずに Oracle の制限を回避可能
 
-    @property
-    def placeholder(self) -> str:
-        """プレースホルダ文字列を返す."""
-        return self._placeholder_fmt
+### 5.5 LIKE エスケープ処理
 
-    @property
-    def like_escape_chars(self) -> frozenset[str]:
-        """LIKE 句でエスケープが必要な特殊文字を返す.
+`escape_like()` ユーティリティ関数で LIKE パラメータ値をエスケープする。
 
-        Note:
-            Oracle の LIKE ESCAPE 構文では、エスケープ文字の後には
-            % または _ のみ指定可能（ORA-01424）。全角文字は
-            LIKE ワイルドカードではないためエスケープ不要。
+**設計判断:**
 
-        Returns:
-            エスケープ対象文字の集合
-        """
-        return frozenset({"#", "%", "_"})
+- `ESCAPE` 句は開発者が SQL に明示的に記述する
+- エスケープ文字はデフォルト `#`（Clione-SQL と同じ）
+- 補助関数 `%L` を使うと ESCAPE 句の自動付与も可能
 
-    @property
-    def in_clause_limit(self) -> int | None:
-        """IN 句に指定できる要素数の上限を返す.
+### 5.6 RDBMS 別 SQL ファイルロード
 
-        Returns:
-            上限値。None は無制限を意味する。
-        """
-        match self:
-            case Dialect.ORACLE:
-                return 1000
-            case _:
-                return None
+SqlLoader は Dialect 指定時に RDBMS 固有ファイルを優先ロードする。
+Clione-SQL の `LoaderUtil.getNodeByPath()` と同等のフォールバック機構。
 
-    @property
-    def backslash_is_escape(self) -> bool:
-        """バックスラッシュが文字列リテラル内でエスケープ文字として機能するか.
+**ファイル解決順序:**
 
-        MySQL と PostgreSQL ではデフォルトで True。
-        """
-        match self:
-            case Dialect.MYSQL | Dialect.POSTGRESQL:
-                return True
-            case _:
-                return False
-```
+1. `{name}.{dialect}.sql` （例: `find.oracle.sql`）
+2. `{name}.sql` （例: `find.sql`）
 
-### 6.3 IN 句上限分割
+**設計判断:**
 
-`Dialect.in_clause_limit` が設定されている場合、IN 句の展開時に要素数が上限を超えると
-自動的に `OR` で分割する。
-
-```sql
--- 元の SQL（パラメータ ids に 1500 要素）
-SELECT * FROM t WHERE id IN /* $ids */(1)
-
--- Oracle (in_clause_limit=1000) での展開結果
-SELECT * FROM t WHERE (id IN (:ids_1, :ids_2, ..., :ids_1000)
-    OR id IN (:ids_1001, :ids_1002, ..., :ids_1500))
-```
-
-分割時は括弧で囲み、`OR` で結合する。
-
-### 6.4 LIKE エスケープ処理
-
-LIKE パラメータのエスケープ処理をユーティリティ関数として提供する。
-
-```python
-from sqlym import Dialect
-
-# Dialect に応じたエスケープ処理
-def escape_like(value: str, dialect: Dialect, escape_char: str = "#") -> str:
-    """LIKE パラメータ値をエスケープする."""
-    for ch in dialect.like_escape_chars:
-        value = value.replace(ch, escape_char + ch)
-    return value
-```
-
-SQL テンプレート側では `ESCAPE` 句を開発者が明示的に記述する：
-
-```sql
-SELECT * FROM t WHERE name LIKE /* $pattern */'%' ESCAPE '#'
-```
-
-### 6.5 RDBMS 別 SQL ファイルロード
-
-SqlLoader に Dialect 指定オプションを追加する。
-Clione-SQL の `LoaderUtil.getNodeByPath()` と同等のフォールバック機構を提供する。
-
-```python
-loader = SqlLoader("sql")
-
-# dialect 指定あり: まず "find.oracle.sql" を探し、なければ "find.sql" にフォールバック
-sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
-```
-
-ファイル解決順序：
-
-1. `{base_path}/{dir}/{name}.{dialect_id}.{ext}` （例: `sql/employee/find.oracle.sql`）
-2. `{base_path}/{path}` （例: `sql/employee/find.sql`）
-
-これにより、大部分の SQL は共通ファイルで記述し、
-RDBMS 固有の構文が必要な場合のみ `.{dialect}` サフィックス付きファイルで上書きできる。
+- 大部分の SQL は共通ファイルで記述
+- ページネーションや UPSERT 等、RDBMS 固有構文のみ別ファイルで上書き
 
 ---
 
-## 7. 実装順序
+## 6. 実装フェーズ
 
 1. **Phase 1: パーサー基盤**
    - LineUnit

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sqlym"
-version = "0.1.2"
+version = "0.2.0"
 description = "SQL-first database access library for Python"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ authors = [
     { name = "izuno4t" },
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
