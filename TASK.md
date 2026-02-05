@@ -52,20 +52,20 @@
 | TASK-027 | ✅ | LIKE 句リスト展開のテスト作成 | TASK-026 |
 | TASK-028 | ✅ | WITH 句（CTE）過剰削除バグの修正 | - |
 | TASK-029 | ✅ | WITH 句修正のテスト更新 | TASK-028 |
-| TASK-030 | ⏳ | 複数行文字列リテラルの解析対応 | - |
-| TASK-031 | ⏳ | 複数行文字列リテラルのテスト作成 | TASK-030 |
-| TASK-032 | ⏳ | `%concat` / `%C` 補助関数の実装 | - |
-| TASK-033 | ⏳ | `%concat` 補助関数のテスト作成 | TASK-032 |
-| TASK-034 | ⏳ | `%L` 補助関数（LIKE エスケープ + escape 句付与）の実装 | TASK-032 |
-| TASK-035 | ⏳ | `%L` 補助関数のテスト作成 | TASK-034 |
-| TASK-036 | ⏳ | `-- %IF` / `-- %ELSE` ブロック切り替えの実装 | - |
-| TASK-037 | ⏳ | ブロック切り替えのテスト作成 | TASK-036 |
-| TASK-038 | ⏳ | `%if-%elseif-%else` インライン条件分岐の実装 | TASK-036 |
-| TASK-039 | ⏳ | インライン条件分岐のテスト作成 | TASK-038 |
-| TASK-040 | ⏳ | `%STR` / `%SQL` 直接埋め込み補助関数の実装 | - |
-| TASK-041 | ⏳ | `%STR` / `%SQL` のテスト作成 | TASK-040 |
-| TASK-042 | ⏳ | `%include` SQL インクルード機能の実装 | - |
-| TASK-043 | ⏳ | `%include` のテスト作成 | TASK-042 |
+| TASK-030 | ✅ | 複数行文字列リテラルの解析対応 | - |
+| TASK-031 | ✅ | 複数行文字列リテラルのテスト作成 | TASK-030 |
+| TASK-032 | ✅ | `%concat` / `%C` 補助関数の実装 | - |
+| TASK-033 | ✅ | `%concat` 補助関数のテスト作成 | TASK-032 |
+| TASK-034 | ✅ | `%L` 補助関数（LIKE エスケープ + escape 句付与）の実装 | TASK-032 |
+| TASK-035 | ✅ | `%L` 補助関数のテスト作成 | TASK-034 |
+| TASK-036 | ✅ | `-- %IF` / `-- %ELSE` ブロック切り替えの実装 | - |
+| TASK-037 | ✅ | ブロック切り替えのテスト作成 | TASK-036 |
+| TASK-038 | ✅ | `%if-%elseif-%else` インライン条件分岐の実装 | TASK-036 |
+| TASK-039 | ✅ | インライン条件分岐のテスト作成 | TASK-038 |
+| TASK-040 | ✅ | `%STR` / `%SQL` 直接埋め込み補助関数の実装 | - |
+| TASK-041 | ✅ | `%STR` / `%SQL` のテスト作成 | TASK-040 |
+| TASK-042 | ✅ | `%include` SQL インクルード機能の実装 | - |
+| TASK-043 | ✅ | `%include` のテスト作成 | TASK-042 |
 | TASK-044 | ⏳ | Clean Architecture 実装例の追加（examples/clean_architecture/） | TASK-007 |
 | TASK-045 | ⏳ | シンプルツール実装例の追加（examples/simple_tool/） | TASK-004 |
 | TASK-046 | ⏳ | M2 全機能の統合テスト作成 | TASK-007,TASK-009,TASK-011,TASK-013,TASK-015,TASK-017,TASK-019,TASK-021,TASK-023,TASK-025,TASK-027,TASK-029,TASK-031 |

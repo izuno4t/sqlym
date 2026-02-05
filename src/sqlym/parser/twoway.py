@@ -6,10 +6,19 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pathlib import Path
+
 from sqlym import config
-from sqlym.exceptions import SqlParseError
+from sqlym.exceptions import SqlFileNotFoundError, SqlParseError
 from sqlym.parser.line_unit import LineUnit
-from sqlym.parser.tokenizer import tokenize
+from sqlym.parser.tokenizer import (
+    Directive,
+    DirectiveType,
+    parse_directive,
+    parse_includes,
+    parse_inline_conditions,
+    tokenize,
+)
 
 if TYPE_CHECKING:
     from sqlym.dialect import Dialect
@@ -64,6 +73,7 @@ class TwoWaySQLParser:
         placeholder: str = "?",
         *,
         dialect: Dialect | None = None,
+        base_path: str | Path | None = None,
     ) -> None:
         """初期化.
 
@@ -71,6 +81,7 @@ class TwoWaySQLParser:
             sql: SQLテンプレート
             placeholder: プレースホルダ形式 ("?", "%s", ":name")
             dialect: RDBMS 方言。指定時は dialect.placeholder を使用する。
+            base_path: %include ディレクティブの基準パス。指定しない場合はインクルード無効。
 
         Raises:
             ValueError: dialect と placeholder (デフォルト以外) を同時に指定した場合
@@ -82,10 +93,90 @@ class TwoWaySQLParser:
         self.original_sql = sql
         self.dialect = dialect
         self.placeholder = dialect.placeholder if dialect is not None else placeholder
+        self.base_path = Path(base_path) if base_path is not None else None
+
+    def _expand_includes(
+        self,
+        sql: str,
+        current_base: Path,
+        included_files: set[Path],
+    ) -> str:
+        """インクルードディレクティブを展開する.
+
+        構文:
+            /* %include "relative/path.sql" */
+            -- %include "relative/path.sql"
+
+        循環インクルードを検出した場合は例外をスロー。
+
+        Args:
+            sql: SQLテンプレート文字列
+            current_base: 現在のベースパス（相対パス解決用）
+            included_files: 既にインクルード済みのファイルパスの集合（循環検出用）
+
+        Returns:
+            インクルード展開後の SQL 文字列
+
+        Raises:
+            SqlParseError: 循環インクルードを検出した場合
+            SqlFileNotFoundError: インクルードファイルが見つからない場合
+
+        """
+        result_lines: list[str] = []
+
+        for line in sql.split("\n"):
+            includes = parse_includes(line)
+            if not includes:
+                result_lines.append(line)
+                continue
+
+            # インクルードディレクティブを後ろから展開
+            processed_line = line
+            for include in reversed(includes):
+                include_path = (current_base / include.path).resolve()
+
+                # 循環インクルードの検出
+                if include_path in included_files:
+                    msg = f"循環インクルードを検出: {include_path}"
+                    raise SqlParseError(msg)
+
+                # ファイルの読み込み
+                if not include_path.is_file():
+                    raise SqlFileNotFoundError(f"インクルードファイルが見つかりません: {include_path}")
+
+                included_sql = include_path.read_text(encoding="utf-8")
+
+                # 再帰的にインクルードを展開
+                new_included_files = included_files | {include_path}
+                new_base = include_path.parent
+                expanded_sql = self._expand_includes(
+                    included_sql,
+                    new_base,
+                    new_included_files,
+                )
+
+                # ディレクティブを展開後の SQL で置換
+                processed_line = (
+                    processed_line[: include.start]
+                    + expanded_sql
+                    + processed_line[include.end :]
+                )
+
+            result_lines.append(processed_line)
+
+        return "\n".join(result_lines)
 
     def parse(self, params: dict[str, Any]) -> ParsedSQL:
         """SQLをパースしてパラメータをバインド."""
+        # %include ディレクティブを展開
+        if self.base_path is not None:
+            self.original_sql = self._expand_includes(
+                self.original_sql,
+                self.base_path,
+                included_files=set(),
+            )
         units = self._parse_lines()
+        units = self._process_block_directives(units, params)
         self._build_tree(units)
         self._evaluate_params(units, params)
         self._propagate_removal(units)
@@ -104,20 +195,320 @@ class TwoWaySQLParser:
         )
 
     def _parse_lines(self) -> list[LineUnit]:
-        """行をパースしてLineUnitリストを作成(Rule 1)."""
+        """行をパースしてLineUnitリストを作成(Rule 1).
+
+        複数行にまたがる文字列リテラルは1つの論理行として結合する。
+        """
         units: list[LineUnit] = []
-        for i, line in enumerate(self.original_sql.splitlines()):
-            stripped = line.lstrip()
-            indent = len(line) - len(stripped) if stripped else -1
+        raw_lines = self.original_sql.splitlines()
+        i = 0
+
+        while i < len(raw_lines):
+            line = raw_lines[i]
+            start_line_number = i + 1
+            original_lines = [line]
+
+            # 文字列リテラルが閉じていない場合、次の行と結合
+            while not self._is_string_closed(line) and i + 1 < len(raw_lines):
+                i += 1
+                original_lines.append(raw_lines[i])
+                line = line + "\n" + raw_lines[i]
+
+            stripped = original_lines[0].lstrip()
+            indent = len(original_lines[0]) - len(stripped) if stripped else -1
+
+            # 複数行の場合、content は結合された全体
+            if len(original_lines) > 1:
+                content = stripped + "\n" + "\n".join(original_lines[1:])
+            else:
+                content = stripped
+
             units.append(
                 LineUnit(
-                    line_number=i + 1,
-                    original=line,
+                    line_number=start_line_number,
+                    original="\n".join(original_lines),
                     indent=indent,
-                    content=stripped,
+                    content=content,
                 )
             )
+            i += 1
+
         return units
+
+    @staticmethod
+    def _is_string_closed(line: str) -> bool:
+        """行内の文字列リテラルがすべて閉じているか判定する."""
+        in_single = False
+        in_double = False
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if ch == "'" and not in_double:
+                # エスケープされた引用符 '' をスキップ
+                if i + 1 < len(line) and line[i + 1] == "'":
+                    i += 2
+                    continue
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                # エスケープされた引用符 "" をスキップ
+                if i + 1 < len(line) and line[i + 1] == '"':
+                    i += 2
+                    continue
+                in_double = not in_double
+            i += 1
+        return not in_single and not in_double
+
+    def _process_block_directives(
+        self, units: list[LineUnit], params: dict[str, Any]
+    ) -> list[LineUnit]:
+        """ブロックディレクティブ（%IF/%ELSE/%END）を処理する.
+
+        ディレクティブで囲まれたブロックを条件に応じて残すか削除するかを決定する。
+        ディレクティブ行自体は出力から除外される。
+
+        構文:
+            -- %IF condition
+            ... SQL ...
+            -- %ELSEIF another_condition
+            ... SQL ...
+            -- %ELSE
+            ... SQL ...
+            -- %END
+
+        条件式は params の値を参照し、positive なら true、negative なら false として評価。
+        NOT、AND、OR 演算子をサポート。
+
+        Args:
+            units: 行単位リスト
+            params: パラメータ辞書
+
+        Returns:
+            ディレクティブ処理後の行単位リスト
+
+        Raises:
+            SqlParseError: ディレクティブの構文エラー
+
+        """
+        result: list[LineUnit] = []
+        i = 0
+
+        while i < len(units):
+            unit = units[i]
+            directive = parse_directive(unit.content)
+
+            if directive is None:
+                # 通常の行
+                result.append(unit)
+                i += 1
+                continue
+
+            if directive.type == DirectiveType.IF:
+                # %IF ブロックを処理
+                end_idx, selected_units = self._process_if_block(
+                    units, i, params
+                )
+                result.extend(selected_units)
+                i = end_idx + 1
+            elif directive.type in (
+                DirectiveType.ELSEIF,
+                DirectiveType.ELSE,
+                DirectiveType.END,
+            ):
+                # 対応する %IF なしのディレクティブ
+                msg = self._format_error(
+                    "directive_without_if",
+                    line_number=unit.line_number,
+                    sql_line=unit.content,
+                )
+                raise SqlParseError(msg)
+            else:
+                result.append(unit)
+                i += 1
+
+        return result
+
+    def _process_if_block(
+        self, units: list[LineUnit], start_idx: int, params: dict[str, Any]
+    ) -> tuple[int, list[LineUnit]]:
+        """%IF ブロックを処理する.
+
+        Args:
+            units: 全行単位リスト
+            start_idx: %IF ディレクティブのインデックス
+            params: パラメータ辞書
+
+        Returns:
+            (END ディレクティブのインデックス, 選択されたブロックの行単位リスト) のタプル
+
+        Raises:
+            SqlParseError: 構文エラー
+
+        """
+        # ブロック情報を収集: [(condition, start_idx, end_idx), ...]
+        blocks: list[tuple[str | None, int, int]] = []
+        if_directive = parse_directive(units[start_idx].content)
+        assert if_directive is not None and if_directive.type == DirectiveType.IF
+
+        current_condition = if_directive.condition
+        current_start = start_idx + 1
+        i = start_idx + 1
+        depth = 0  # ネストされた %IF のカウント
+
+        while i < len(units):
+            directive = parse_directive(units[i].content)
+
+            if directive is None:
+                i += 1
+                continue
+
+            if directive.type == DirectiveType.IF:
+                # ネストされた %IF
+                depth += 1
+                i += 1
+                continue
+
+            if depth > 0:
+                # ネスト内のディレクティブは無視
+                if directive.type == DirectiveType.END:
+                    depth -= 1
+                i += 1
+                continue
+
+            if directive.type == DirectiveType.ELSEIF:
+                # 現在のブロックを終了し、新しいブロックを開始
+                blocks.append((current_condition, current_start, i))
+                current_condition = directive.condition
+                current_start = i + 1
+                i += 1
+            elif directive.type == DirectiveType.ELSE:
+                # 現在のブロックを終了し、ELSE ブロックを開始
+                blocks.append((current_condition, current_start, i))
+                current_condition = None  # ELSE は条件なし（常に true）
+                current_start = i + 1
+                i += 1
+            elif directive.type == DirectiveType.END:
+                # 最後のブロックを終了
+                blocks.append((current_condition, current_start, i))
+                end_idx = i
+                break
+        else:
+            # %END が見つからない
+            msg = self._format_error(
+                "unclosed_if_block",
+                line_number=units[start_idx].line_number,
+                sql_line=units[start_idx].content,
+            )
+            raise SqlParseError(msg)
+
+        # 条件を評価して、最初に true となるブロックを選択
+        selected_units: list[LineUnit] = []
+        for condition, block_start, block_end in blocks:
+            if condition is None:
+                # ELSE ブロック（条件なし）
+                is_true = True
+            else:
+                is_true = self._evaluate_condition(condition, params)
+
+            if is_true:
+                # このブロックを選択（ネストされたディレクティブも処理）
+                block_units = units[block_start:block_end]
+                selected_units = self._process_block_directives(block_units, params)
+                break
+
+        return end_idx, selected_units
+
+    def _evaluate_condition(self, condition: str, params: dict[str, Any]) -> bool:
+        """条件式を評価する.
+
+        サポートする構文:
+        - param : params[param] が positive なら true
+        - NOT param : params[param] が negative なら true
+        - param1 AND param2 : 両方が true なら true
+        - param1 OR param2 : どちらかが true なら true
+        - (expr) : 括弧でグループ化
+
+        優先順位: NOT > AND > OR
+
+        Args:
+            condition: 条件式文字列
+            params: パラメータ辞書
+
+        Returns:
+            条件が true なら True
+
+        """
+        return self._parse_or_expr(condition.strip(), params)
+
+    def _parse_or_expr(self, expr: str, params: dict[str, Any]) -> bool:
+        """OR 式をパースする."""
+        parts = self._split_by_operator(expr, "OR")
+        return any(self._parse_and_expr(part.strip(), params) for part in parts)
+
+    def _parse_and_expr(self, expr: str, params: dict[str, Any]) -> bool:
+        """AND 式をパースする."""
+        parts = self._split_by_operator(expr, "AND")
+        return all(self._parse_not_expr(part.strip(), params) for part in parts)
+
+    def _parse_not_expr(self, expr: str, params: dict[str, Any]) -> bool:
+        """NOT 式をパースする."""
+        expr = expr.strip()
+        if expr.upper().startswith("NOT "):
+            inner = expr[4:].strip()
+            return not self._parse_primary_expr(inner, params)
+        return self._parse_primary_expr(expr, params)
+
+    def _parse_primary_expr(self, expr: str, params: dict[str, Any]) -> bool:
+        """基本式（識別子または括弧式）をパースする."""
+        expr = expr.strip()
+        if expr.startswith("(") and expr.endswith(")"):
+            # 括弧式を再帰的に評価
+            inner = expr[1:-1].strip()
+            return self._parse_or_expr(inner, params)
+        # 識別子（パラメータ名）
+        value = params.get(expr)
+        return not is_negative(value)
+
+    @staticmethod
+    def _split_by_operator(expr: str, operator: str) -> list[str]:
+        """論理演算子で式を分割する（括弧内は無視）."""
+        parts: list[str] = []
+        current = ""
+        depth = 0
+        i = 0
+        op_upper = operator.upper()
+        op_len = len(operator)
+
+        while i < len(expr):
+            ch = expr[i]
+            if ch == "(":
+                depth += 1
+                current += ch
+                i += 1
+            elif ch == ")":
+                depth -= 1
+                current += ch
+                i += 1
+            elif depth == 0 and expr[i:i + op_len].upper() == op_upper:
+                # 演算子の前後がスペースまたは文字列の端であることを確認
+                before_ok = i == 0 or expr[i - 1].isspace()
+                after_ok = (
+                    i + op_len >= len(expr) or expr[i + op_len].isspace()
+                )
+                if before_ok and after_ok:
+                    parts.append(current)
+                    current = ""
+                    i += op_len
+                else:
+                    current += ch
+                    i += 1
+            else:
+                current += ch
+                i += 1
+
+        if current:
+            parts.append(current)
+
+        return parts if parts else [expr]
 
     def _build_tree(self, units: list[LineUnit]) -> None:
         """インデントに基づいて親子関係を構築(Rule 2)."""
@@ -245,10 +636,13 @@ class TwoWaySQLParser:
                 continue
 
             line = unit.content
+            # インライン条件分岐を処理
+            line = self._process_inline_conditions(line, params)
             tokens = tokenize(line)
             if not tokens:
-                # パラメータなし: インデント付きでそのまま出力
-                result_lines.append(unit.original)
+                # パラメータなし: インデント付きで出力
+                indent_str = " " * unit.indent
+                result_lines.append(indent_str + line)
                 continue
 
             # トークンを後ろから置換(位置ずれ防止)
@@ -353,6 +747,22 @@ class TwoWaySQLParser:
                         line = line[: token.start] + placeholders + line[token.end :]
                         for v in reversed(value):
                             line_params.insert(0, v)
+                elif token.helper_func:
+                    # 補助関数の処理
+                    replacement, expanded_value = self._process_helper_func(
+                        token, params, is_named
+                    )
+                    if token.helper_func in ("STR", "SQL"):
+                        # 直接埋め込み（プレースホルダなし）
+                        line = line[: token.start] + replacement + line[token.end :]
+                    else:
+                        # %concat, %L は値をバインド
+                        placeholder = f":{token.name}" if is_named else self.placeholder
+                        line = line[: token.start] + replacement + line[token.end :]
+                        if is_named:
+                            named_bind_params[token.name] = expanded_value
+                        else:
+                            line_params.insert(0, expanded_value)
                 else:
                     placeholder = f":{token.name}" if is_named else self.placeholder
                     line = line[: token.start] + placeholder + line[token.end :]
@@ -524,6 +934,118 @@ class TwoWaySQLParser:
 
         parts = [f"{col_expr} {like_kw} {self.placeholder}" for _ in value]
         return f"({joiner.join(parts)})", list(value), {}
+
+    def _process_inline_conditions(
+        self, line: str, params: dict[str, Any]
+    ) -> str:
+        """インライン条件分岐を処理する.
+
+        構文: /*%if cond1 */ val1 /*%elseif cond2 */ val2 /*%else */ val3 /*%end*/
+
+        Args:
+            line: SQL行文字列
+            params: パラメータ辞書
+
+        Returns:
+            条件分岐を解決後の行文字列
+
+        """
+        conditions = parse_inline_conditions(line)
+        if not conditions:
+            return line
+
+        # 後ろから置換（位置ずれ防止）
+        for cond in reversed(conditions):
+            selected_value = ""
+            found = False
+
+            # 条件を順に評価
+            for i, condition in enumerate(cond.conditions):
+                if self._evaluate_condition(condition, params):
+                    selected_value = cond.values[i] if i < len(cond.values) else ""
+                    found = True
+                    break
+
+            # どの条件も true でなければ、else 値を使用（あれば）
+            if not found and len(cond.values) > len(cond.conditions):
+                selected_value = cond.values[-1]
+
+            line = line[: cond.start] + selected_value + line[cond.end :]
+
+        return line
+
+    def _process_helper_func(
+        self,
+        token: Any,
+        params: dict[str, Any],
+        is_named: bool,
+    ) -> tuple[str, Any]:
+        """補助関数を処理する.
+
+        Args:
+            token: パラメータトークン（helper_func, helper_args を持つ）
+            params: パラメータ辞書
+            is_named: 名前付きプレースホルダを使用するか
+
+        Returns:
+            (置換文字列, バインドする値) のタプル
+
+        """
+        func = token.helper_func
+        args = token.helper_args
+
+        if func == "concat":
+            # %concat / %C: 引数を連結
+            result_parts: list[str] = []
+            for arg in args:
+                if arg.startswith("'") and arg.endswith("'"):
+                    # 文字列リテラル
+                    result_parts.append(arg[1:-1].replace("''", "'"))
+                elif arg.startswith('"') and arg.endswith('"'):
+                    result_parts.append(arg[1:-1].replace('""', '"'))
+                else:
+                    # パラメータ名
+                    val = params.get(arg)
+                    if val is not None:
+                        result_parts.append(str(val))
+            concatenated = "".join(result_parts)
+            placeholder = f":{token.name}" if is_named else self.placeholder
+            return placeholder, concatenated
+
+        if func == "L":
+            # %L: LIKE エスケープ + escape 句付与
+            from sqlym.dialect import Dialect
+            from sqlym.escape_utils import escape_like
+
+            # dialect が設定されていない場合は SQLITE をデフォルト
+            dialect = self.dialect if self.dialect else Dialect.SQLITE
+
+            result_parts = []
+            for arg in args:
+                if arg.startswith("'") and arg.endswith("'"):
+                    result_parts.append(arg[1:-1].replace("''", "'"))
+                elif arg.startswith('"') and arg.endswith('"'):
+                    result_parts.append(arg[1:-1].replace('""', '"'))
+                else:
+                    val = params.get(arg)
+                    if val is not None:
+                        # パラメータ値を LIKE エスケープ
+                        escaped = escape_like(str(val), dialect, escape_char="#")
+                        result_parts.append(escaped)
+            concatenated = "".join(result_parts)
+            placeholder = f":{token.name}" if is_named else self.placeholder
+            # escape 句を付与
+            return f"{placeholder} escape '#'", concatenated
+
+        if func in ("STR", "SQL"):
+            # %STR / %SQL: 直接埋め込み（SQLインジェクション注意）
+            val = params.get(token.name, token.default)
+            if val is None:
+                val = token.default
+            return str(val), None
+
+        # 未知の補助関数はデフォルト値を返す
+        return token.default, None
 
     def _expand_in_clause(self, values: list[Any]) -> tuple[str, list[Any]]:
         """IN句のリストをプレースホルダに展開する.
@@ -781,12 +1303,16 @@ class TwoWaySQLParser:
             "ja": {
                 "in_clause_column_unresolved": "IN句分割の列式を抽出できません",
                 "required_param_missing": "必須パラメータが指定されていません",
+                "directive_without_if": "対応する %IF がないディレクティブです",
+                "unclosed_if_block": "%IF ブロックが閉じられていません（%END が必要）",
             },
             "en": {
                 "in_clause_column_unresolved": (
                     "Failed to extract column expression for IN clause split"
                 ),
                 "required_param_missing": "Required parameter is missing",
+                "directive_without_if": "Directive without matching %IF",
+                "unclosed_if_block": "Unclosed %IF block (missing %END)",
             },
         }
         lang = config.ERROR_MESSAGE_LANGUAGE
