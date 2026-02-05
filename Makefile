@@ -1,4 +1,4 @@
-.PHONY: install test lint format lint-fix pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all
+.PHONY: install test lint format lint-fix pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all build release-test release
 
 install:
 	uv sync --dev
@@ -46,3 +46,13 @@ clean:
 	rm -rf .venv .ruff_cache .pytest_cache .coverage htmlcov dist build
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
+
+build:
+	rm -rf dist/
+	uv run python -m build
+
+release-test: build
+	uv run twine upload --repository testpypi dist/*
+
+release: build
+	uv run twine upload dist/*
