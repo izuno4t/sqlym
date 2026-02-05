@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from sqlym import config
 from sqlym.exceptions import SqlFileNotFoundError, SqlParseError
 from sqlym.parser.line_unit import LineUnit
 from sqlym.parser.tokenizer import (
-    Directive,
     DirectiveType,
     parse_directive,
     parse_includes,
@@ -142,7 +140,8 @@ class TwoWaySQLParser:
 
                 # ファイルの読み込み
                 if not include_path.is_file():
-                    raise SqlFileNotFoundError(f"インクルードファイルが見つかりません: {include_path}")
+                    msg = f"インクルードファイルが見つかりません: {include_path}"
+                    raise SqlFileNotFoundError(msg)
 
                 included_sql = include_path.read_text(encoding="utf-8")
 
@@ -574,7 +573,11 @@ class TwoWaySQLParser:
                     continue
 
                 # $ または & 修飾子: negative 時に行削除
+                # ただし IN 句の場合、空リストは IN (NULL) に変換されるため行削除しない
                 if (token.removable or token.bindless) and value_is_negative:
+                    # IN 句で空リストの場合は行削除しない（IN (NULL) に変換）
+                    if token.is_in_clause and isinstance(value, list) and len(value) == 0:
+                        continue
                     unit.removed = True
                     break
 

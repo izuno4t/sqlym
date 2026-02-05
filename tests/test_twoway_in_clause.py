@@ -34,12 +34,14 @@ class TestInClauseBasic:
         assert result.sql == "SELECT * FROM users WHERE id IN (NULL)"
         assert result.params == []
 
-    def test_removable_empty_list_removes_line(self) -> None:
-        """$付き IN句の空リストは行削除される（negative 拡張）."""
+    def test_removable_empty_list_becomes_null(self) -> None:
+        """$付き IN句の空リストは IN (NULL) に変換される（0件返却用）."""
         sql = "SELECT * FROM users WHERE id IN /* $ids */(1, 2, 3)"
         parser = TwoWaySQLParser(sql)
         result = parser.parse({"ids": []})
-        assert result.sql == ""
+        # 空リストは IN (NULL) に変換（0件を返す）
+        # None の場合のみ行削除
+        assert "IN (NULL)" in result.sql
         assert result.params == []
 
 

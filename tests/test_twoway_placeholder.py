@@ -124,11 +124,12 @@ class TestNamedInClause:
         assert result.named_params == {}
 
     def test_in_clause_removable_empty_list(self) -> None:
-        """:name 形式で $付き IN 句の空リストは行削除."""
+        """:name 形式で $付き IN 句の空リストは IN (NULL) に変換."""
         sql = "SELECT * FROM users WHERE id IN /* $ids */(1, 2, 3)"
         parser = TwoWaySQLParser(sql, placeholder=":name")
         result = parser.parse({"ids": []})
-        assert result.sql == ""
+        # IN 句の空リストは IN (NULL) に変換（行削除ではない）
+        assert "IN (NULL)" in result.sql
         assert result.named_params == {}
 
     def test_in_clause_non_list(self) -> None:

@@ -3,7 +3,7 @@
 import pytest
 
 from sqlym.exceptions import SqlParseError
-from sqlym.parser.tokenizer import Directive, DirectiveType, parse_directive
+from sqlym.parser.tokenizer import DirectiveType, parse_directive
 from sqlym.parser.twoway import TwoWaySQLParser
 
 

@@ -84,8 +84,8 @@ WHERE
         assert "status = ?" in result.sql
         assert result.params == ["active"]
 
-    def test_empty_list_removes_line(self) -> None:
-        """空リスト [] は行削除される."""
+    def test_empty_list_in_clause_becomes_null(self) -> None:
+        """IN 句の空リスト [] は IN (NULL) に変換される（行削除ではない）."""
         sql = """\
 SELECT * FROM users
 WHERE
@@ -93,7 +93,8 @@ WHERE
     AND dept_id IN /* $dept_ids */(1, 2, 3)"""
         parser = TwoWaySQLParser(sql)
         result = parser.parse({"status": "active", "dept_ids": []})
-        assert "dept_id" not in result.sql
+        # IN 句の空リストは IN (NULL) に変換（0件を返す）
+        assert "dept_id IN (NULL)" in result.sql
         assert "status = ?" in result.sql
         assert result.params == ["active"]
 

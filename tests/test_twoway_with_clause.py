@@ -160,10 +160,10 @@ WITH filtered AS (
 SELECT * FROM filtered"""
         parser = TwoWaySQLParser(sql)
         result = parser.parse({"dept_ids": []})
-        # 空リストは negative なので行削除、WHERE は削除されるが SELECT は残る
+        # IN 句の空リストは IN (NULL) に変換（行削除ではない）
         assert "WITH" in result.sql
         assert "SELECT * FROM users" in result.sql
-        assert "WHERE" not in result.sql
+        assert "dept_id IN (NULL)" in result.sql
 
 
 class TestWithClauseComplex:
