@@ -55,4 +55,4 @@ release-test: build
 	uv run twine upload --repository testpypi dist/*
 
 release: build
-	uv run twine upload dist/*
+	uv run twine upload --repository sqlym dist/*
