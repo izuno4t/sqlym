@@ -30,17 +30,19 @@ class Dialect(Enum):
     def like_escape_chars(self) -> frozenset[str]:
         """LIKE 句でエスケープが必要な特殊文字を返す.
 
-        Oracle では全角 ``％`` ``＿`` もエスケープ対象となる。
+        SQL 標準の LIKE ワイルドカード文字（``%``, ``_``）と
+        エスケープ文字自体（``#``）をエスケープ対象とする。
+
+        Note:
+            Oracle の LIKE ESCAPE 構文では、エスケープ文字の後には
+            ``%`` または ``_`` のみ指定可能（ORA-01424）。
+            全角文字（``％``, ``＿``）は Oracle のワイルドカードではないため、
+            エスケープ対象に含めない。
 
         Returns:
             エスケープ対象文字の frozenset
         """
-        base = frozenset({"#", "%", "_"})
-        match self:
-            case Dialect.ORACLE:
-                return base | frozenset({"％", "＿"})
-            case _:
-                return base
+        return frozenset({"#", "%", "_"})
 
     @property
     def in_clause_limit(self) -> int | None:

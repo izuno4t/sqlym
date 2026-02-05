@@ -50,15 +50,15 @@ class TestLikeEscapeChars:
         for dialect in Dialect:
             assert base <= dialect.like_escape_chars
 
-    def test_oracle_includes_fullwidth(self) -> None:
-        """Oracle は全角 ％ ＿ もエスケープ対象."""
-        chars = Dialect.ORACLE.like_escape_chars
-        assert "％" in chars
-        assert "＿" in chars
+    def test_fullwidth_not_included(self) -> None:
+        """全角 ％ ＿ はエスケープ対象外.
 
-    def test_non_oracle_excludes_fullwidth(self) -> None:
-        """Oracle 以外は全角文字を含まない."""
-        for dialect in (Dialect.SQLITE, Dialect.POSTGRESQL, Dialect.MYSQL):
+        Note:
+            Oracle の LIKE ESCAPE 構文では、エスケープ文字の後には
+            ``%`` または ``_`` のみ指定可能（ORA-01424）。
+            全角文字は LIKE ワイルドカードではないためエスケープ不要。
+        """
+        for dialect in Dialect:
             assert "％" not in dialect.like_escape_chars
             assert "＿" not in dialect.like_escape_chars
 
@@ -138,19 +138,17 @@ class TestEscapeLike:
         """空文字列はそのまま."""
         assert escape_like("", Dialect.SQLITE) == ""
 
-    def test_oracle_fullwidth_percent(self) -> None:
-        """Oracle は全角 ％ もエスケープする."""
-        assert escape_like("100％達成", Dialect.ORACLE) == "100#％達成"
+    def test_fullwidth_no_escape(self) -> None:
+        """全角 ％ ＿ はエスケープしない.
 
-    def test_oracle_fullwidth_underscore(self) -> None:
-        """Oracle は全角 ＿ もエスケープする."""
-        assert escape_like("名前＿太郎", Dialect.ORACLE) == "名前#＿太郎"
-
-    def test_non_oracle_no_fullwidth_escape(self) -> None:
-        """Oracle 以外は全角文字をエスケープしない."""
-        assert escape_like("100％達成", Dialect.SQLITE) == "100％達成"
-        assert escape_like("100％達成", Dialect.POSTGRESQL) == "100％達成"
-        assert escape_like("100％達成", Dialect.MYSQL) == "100％達成"
+        Note:
+            全角文字は SQL の LIKE ワイルドカードではないため、
+            エスケープ不要。Oracle の LIKE ESCAPE 構文では
+            エスケープ文字の後に全角文字を指定すると ORA-01424 エラー。
+        """
+        for dialect in Dialect:
+            assert escape_like("100％達成", dialect) == "100％達成"
+            assert escape_like("名前＿太郎", dialect) == "名前＿太郎"
 
     def test_custom_escape_char(self) -> None:
         """カスタムエスケープ文字を指定できる."""

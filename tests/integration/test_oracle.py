@@ -470,11 +470,16 @@ class TestDialectLikeEscape:
         assert len(rows) == 1
         assert rows[0]["name"] == "10% OFF Sale"
 
-    def test_like_escape_fullwidth_percent(self, db_with_special_names: Any) -> None:
-        """全角％を含む値を LIKE 検索（Oracle固有）."""
-        search = escape_like("100％", Dialect.ORACLE)
-        sql = "SELECT * FROM products WHERE name LIKE /* $pattern */'%' ESCAPE '#'"
-        result = parse_sql(sql, {"pattern": f"{search}%"}, dialect=Dialect.ORACLE)
+    def test_like_search_fullwidth_chars(self, db_with_special_names: Any) -> None:
+        """全角文字を含む値を LIKE 検索.
+
+        Note:
+            全角 ``％`` ``＿`` は Oracle の LIKE ワイルドカードではないため、
+            エスケープ不要でそのまま検索できる。
+        """
+        # 全角％はワイルドカードではないのでエスケープ不要
+        sql = "SELECT * FROM products WHERE name LIKE /* $pattern */'%'"
+        result = parse_sql(sql, {"pattern": "100％%"}, dialect=Dialect.ORACLE)
         cur = db_with_special_names.cursor()
         cur.execute(result.sql, result.named_params)
         cur.rowfactory = lambda *args: dict(zip([d[0].lower() for d in cur.description], args))
