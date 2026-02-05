@@ -57,7 +57,7 @@
 | TASK-032 | ✅ | DialectクラスにDB固有プロパティを追加する（LIKEエスケープ、IN句上限、バックスラッシュエスケープ） | TASK-019 |
 | TASK-033 | ✅ | IN句展開時のDB固有上限分割を実装しテストする（Oracle 1000件制限対応） | TASK-032, TASK-008 |
 | TASK-034 | ✅ | LIKEパラメータのエスケープ処理を実装しテストする | TASK-032 |
-| TASK-035 | ⏳ | SqlLoaderにRDBMS別SQLファイルロードを追加しテストする | TASK-032, TASK-016 |
+| TASK-035 | ✅ | SqlLoaderにRDBMS別SQLファイルロードを追加しテストする | TASK-032, TASK-016 |
 | TASK-036 | ⏳ | Dialect拡張機能の統合テストを作成する（全RDBMS） | TASK-033, TASK-034, TASK-035 |
 
 ## タスク詳細（補足が必要な場合のみ）
@@ -203,6 +203,7 @@
   - `load("find.sql", dialect=Dialect.ORACLE)` → まず `find.sql-oracle` を探し、なければ `find.sql` にフォールバック
   - Clione-SQL の `LoaderUtil.getNodeByPath(sqlPath, productName)` と同等
 - 注意: ファイル名サフィックスは `-{dialect_name}` 形式（例: `find.sql-postgresql`）
+- 実装済み: `SqlLoader.load()` に `dialect` 引数追加、テスト（`tests/test_sql_loader.py`）
 
 ### TASK-036
 

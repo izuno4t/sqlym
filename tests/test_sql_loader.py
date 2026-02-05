@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from sqly import Dialect
 from sqly.exceptions import SqlFileNotFoundError
 from sqly.loader import SqlLoader
 
@@ -117,3 +118,104 @@ class TestSqlLoaderEncoding:
         loader = SqlLoader(tmp_path)
         sql = loader.load("test.sql")
         assert "'太郎'" in sql
+
+
+@pytest.fixture
+def dialect_sql_dir(tmp_path: Path) -> Path:
+    """Dialect 別 SQL ファイルを含むディレクトリを作成する."""
+    # 汎用ファイル
+    (tmp_path / "find.sql").write_text("SELECT * FROM t", encoding="utf-8")
+    # Oracle 固有
+    (tmp_path / "find.sql-oracle").write_text(
+        "SELECT * FROM t WHERE ROWNUM <= 10", encoding="utf-8"
+    )
+    # PostgreSQL 固有
+    (tmp_path / "find.sql-postgresql").write_text(
+        "SELECT * FROM t LIMIT 10", encoding="utf-8"
+    )
+    # 汎用のみ（dialect固有なし）
+    (tmp_path / "common.sql").write_text("SELECT 1", encoding="utf-8")
+    # サブディレクトリ
+    sub_dir = tmp_path / "employee"
+    sub_dir.mkdir()
+    (sub_dir / "find.sql").write_text("SELECT * FROM employees", encoding="utf-8")
+    (sub_dir / "find.sql-mysql").write_text(
+        "SELECT * FROM employees LIMIT 10", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestSqlLoaderDialect:
+    """Dialect 別 SQL ファイルロード."""
+
+    def test_dialect_specific_file_loaded(self, dialect_sql_dir: Path) -> None:
+        """Dialect 固有ファイルが存在すれば優先."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("find.sql", dialect=Dialect.ORACLE)
+        assert "ROWNUM" in sql
+
+    def test_dialect_postgresql(self, dialect_sql_dir: Path) -> None:
+        """PostgreSQL 固有ファイルがロードされる."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("find.sql", dialect=Dialect.POSTGRESQL)
+        assert "LIMIT 10" in sql
+
+    def test_dialect_fallback_to_generic(self, dialect_sql_dir: Path) -> None:
+        """Dialect 固有ファイルがなければ汎用ファイルにフォールバック."""
+        loader = SqlLoader(dialect_sql_dir)
+        # MySQL 固有の find.sql-mysql は存在しないのでフォールバック
+        sql = loader.load("find.sql", dialect=Dialect.MYSQL)
+        assert sql == "SELECT * FROM t"
+
+    def test_dialect_none_loads_generic(self, dialect_sql_dir: Path) -> None:
+        """dialect=None では汎用ファイルをロード."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("find.sql")
+        assert sql == "SELECT * FROM t"
+
+    def test_dialect_with_common_file(self, dialect_sql_dir: Path) -> None:
+        """Dialect 固有ファイルがないファイルでもフォールバック動作."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("common.sql", dialect=Dialect.ORACLE)
+        assert sql == "SELECT 1"
+
+    def test_dialect_in_subdirectory(self, dialect_sql_dir: Path) -> None:
+        """サブディレクトリ内の Dialect 固有ファイル."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("employee/find.sql", dialect=Dialect.MYSQL)
+        assert "LIMIT 10" in sql
+
+    def test_dialect_fallback_in_subdirectory(self, dialect_sql_dir: Path) -> None:
+        """サブディレクトリ内で Dialect 固有がなければフォールバック."""
+        loader = SqlLoader(dialect_sql_dir)
+        sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
+        assert sql == "SELECT * FROM employees"
+
+    def test_all_dialects_suffix(self, tmp_path: Path) -> None:
+        """全 Dialect のサフィックス形式を検証."""
+        (tmp_path / "test.sql").write_text("generic", encoding="utf-8")
+        (tmp_path / "test.sql-sqlite").write_text("sqlite", encoding="utf-8")
+        (tmp_path / "test.sql-postgresql").write_text("postgresql", encoding="utf-8")
+        (tmp_path / "test.sql-mysql").write_text("mysql", encoding="utf-8")
+        (tmp_path / "test.sql-oracle").write_text("oracle", encoding="utf-8")
+        loader = SqlLoader(tmp_path)
+        assert loader.load("test.sql", dialect=Dialect.SQLITE) == "sqlite"
+        assert loader.load("test.sql", dialect=Dialect.POSTGRESQL) == "postgresql"
+        assert loader.load("test.sql", dialect=Dialect.MYSQL) == "mysql"
+        assert loader.load("test.sql", dialect=Dialect.ORACLE) == "oracle"
+        assert loader.load("test.sql") == "generic"
+
+    def test_file_not_found_with_dialect(self, dialect_sql_dir: Path) -> None:
+        """存在しないファイルは dialect 指定時もエラー."""
+        loader = SqlLoader(dialect_sql_dir)
+        with pytest.raises(SqlFileNotFoundError):
+            loader.load("nonexistent.sql", dialect=Dialect.ORACLE)
+
+    def test_path_traversal_rejected_with_dialect(self, tmp_path: Path) -> None:
+        """Dialect 指定時もパストラバーサルを拒否."""
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        (tmp_path / "outside.sql-oracle").write_text("SELECT 1", encoding="utf-8")
+        loader = SqlLoader(base_dir)
+        with pytest.raises(SqlFileNotFoundError):
+            loader.load("../outside.sql", dialect=Dialect.ORACLE)
