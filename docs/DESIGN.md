@@ -406,7 +406,7 @@ class SqlLoader:
 # sqlym/exceptions.py
 
 class SqlyError(Exception):
-    """sqlyの基底例外"""
+    """sqlymの基底例外"""
     pass
 
 class SqlParseError(SqlyError):
@@ -565,7 +565,7 @@ mapper = create_mapper(Employee)  # 自動でPydanticMapper
 
 ### 6.1 設計方針
 
-sqly は Clione-SQL と同様に「SQL-first」のテンプレートエンジンである。
+sqlym は Clione-SQL と同様に「SQL-first」のテンプレートエンジンである。
 SQL は開発者が直接記述し、エンジンはパラメータバインド・行削除・IN 句展開を担当する。
 
 このアーキテクチャでは、RDBMS 固有の SQL 構文（ページネーション、UPSERT、FOR UPDATE 等）は
@@ -592,7 +592,7 @@ Doma2 は ORM としてINSERT/UPDATE/DELETE/UPSERT 文を **自動生成** す�
 ページネーション、識別子クォート、UPSERT 構文、ID 生成等の DB 固有構文を
 すべて Dialect で吸収する必要がある。
 
-sqly はこれらの SQL 生成機能を持たないため、Doma2 相当の Dialect は不要である。
+sqlym はこれらの SQL 生成機能を持たないため、Doma2 相当の Dialect は不要である。
 将来的に必要になった場合は Backlog（TASK.md 参照）として管理している。
 
 ### 6.2 Dialect クラス設計

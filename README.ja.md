@@ -58,31 +58,34 @@ WHERE
     AND status = /* $status */'active'
 ```
 
-### 3. パースと実行
+### 3. Sqlym でクエリ
 
 ```python
-from sqlym import SqlLoader, parse_sql, create_mapper
+import sqlite3
+from sqlym import Sqlym
 
-# SQL テンプレート読み込み
-loader = SqlLoader("sql")
-sql_template = loader.load("employee/find_by_dept.sql")
+# データベースに接続
+conn = sqlite3.connect("example.db")
 
-# パラメータでパース（None の行は自動削除）
-result = parse_sql(sql_template, {
+# Sqlym インスタンスを作成
+db = Sqlym(conn, sql_dir="sql")
+
+# パラメータでクエリ（None の行は自動削除）
+employees = db.query(Employee, "employee/find_by_dept.sql", {
     "id": 100,
     "dept_id": None,  # この行は削除される
     "status": "active",
 })
 
-# データベースドライバーで実行
-cursor.execute(result.sql, result.params)
-
-# 結果をエンティティにマッピング
-mapper = create_mapper(Employee)
-employees = [mapper.map(row) for row in cursor.fetchall()]
-
 for emp in employees:
     print(emp.name)
+
+# 1件取得
+employee = db.query_one(Employee, "employee/find_by_id.sql", {"id": 100})
+
+# INSERT/UPDATE/DELETE の実行
+affected = db.execute("employee/update.sql", {"id": 100, "status": "inactive"})
+conn.commit()
 ```
 
 SQL テンプレートの書き方の詳細は

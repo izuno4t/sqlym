@@ -2,7 +2,7 @@
 
 ## 1. 概要
 
-sqlyはPython用のSQL重視データベースアクセスライブラリである。
+sqlymはPython用のSQL重視データベースアクセスライブラリである。
 Java の Clione-SQL と Doma2 の設計思想を参考に、Pythonらしい実装を目指す。
 
 ### 1.1 設計思想

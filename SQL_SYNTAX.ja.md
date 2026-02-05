@@ -2,13 +2,13 @@
 
 [English](SQL_SYNTAX.md)
 
-sqly で使用する SQL テンプレートの書き方を説明します。
+sqlym で使用する SQL テンプレートの書き方を説明します。
 
 ## 基本的な考え方
 
-sqly の SQL テンプレートは **2way SQL** です。
+sqlym の SQL テンプレートは **2way SQL** です。
 
-- sqly を通すとパラメータがバインドされた SQL になる
+- sqlym を通すとパラメータがバインドされた SQL になる
 - DB ツール（pgAdmin、DBeaver 等）でそのまま実行するとデフォルト値で
   動作する
 
@@ -19,7 +19,7 @@ SELECT * FROM users WHERE name = /* $name */'山田太郎'
 | 実行方法 | 結果 |
 | --- | --- |
 | DB ツールで直接実行 | `WHERE name = '山田太郎'`（デフォルト値が使われる） |
-| sqly 経由で実行 | `WHERE name = ?` + バインド値 `['山田太郎']` |
+| sqlym 経由で実行 | `WHERE name = ?` + バインド値 `['山田太郎']` |
 
 SQL コメント `/* ... */` の中にパラメータを書き、コメント直後に
 デフォルト値を置く。DB ツールはコメントを無視するのでデフォルト値が
@@ -118,7 +118,7 @@ WHERE
 
 ## 行の削除と親子関係
 
-sqly は **行単位** で SQL を処理します。動的な条件の組み立ては行の削除で
+sqlym は **行単位** で SQL を処理します。動的な条件の組み立ては行の削除で
 実現します。
 
 ### Rule 1：行単位処理
@@ -368,7 +368,7 @@ SQL パースに失敗した場合（例: IN 句分割ができない場合）�
 含まれます。SQL 断片を表示したくない場合は設定で無効化してください。
 
 ```python
-from sqly import config
+from sqlym import config
 
 config.ERROR_INCLUDE_SQL = False
 config.ERROR_MESSAGE_LANGUAGE = "en"

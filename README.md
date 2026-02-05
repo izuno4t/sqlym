@@ -58,31 +58,34 @@ WHERE
     AND status = /* $status */'active'
 ```
 
-### 3. Parse and Execute
+### 3. Query with Sqlym
 
 ```python
-from sqlym import SqlLoader, parse_sql, create_mapper
+import sqlite3
+from sqlym import Sqlym
 
-# Load SQL template
-loader = SqlLoader("sql")
-sql_template = loader.load("employee/find_by_dept.sql")
+# Connect to database
+conn = sqlite3.connect("example.db")
 
-# Parse with parameters (lines with None are automatically removed)
-result = parse_sql(sql_template, {
+# Create Sqlym instance
+db = Sqlym(conn, sql_dir="sql")
+
+# Query with parameters (lines with None are automatically removed)
+employees = db.query(Employee, "employee/find_by_dept.sql", {
     "id": 100,
     "dept_id": None,  # this line is removed
     "status": "active",
 })
 
-# Execute with your database driver
-cursor.execute(result.sql, result.params)
-
-# Map results to entity
-mapper = create_mapper(Employee)
-employees = [mapper.map(row) for row in cursor.fetchall()]
-
 for emp in employees:
     print(emp.name)
+
+# Get a single record
+employee = db.query_one(Employee, "employee/find_by_id.sql", {"id": 100})
+
+# Execute INSERT/UPDATE/DELETE
+affected = db.execute("employee/update.sql", {"id": 100, "status": "inactive"})
+conn.commit()
 ```
 
 For the full SQL syntax reference, see [SQL Syntax](SQL_SYNTAX.md).

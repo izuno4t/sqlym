@@ -1,7 +1,7 @@
 # TASKS
 
 マイルストーン: M1
-ゴール: sqly v1.0の全機能（2way SQLパーサー、マッパー、SQLローダー）を実装し統合テストで動作検証する
+ゴール: sqlym v1.0の全機能（2way SQLパーサー、マッパー、SQLローダー）を実装し統合テストで動作検証する
 
 ## ステータス表記ルール
 
@@ -216,7 +216,7 @@
 
 ## Backlog（Doma2 相当の Dialect 拡張）
 
-以下は Doma2 が提供する ORM レベルの Dialect 機能。sqly の現在のスコープ（SQL テンプレートエンジン）を超える可能性があるため、必要に応じて採用を検討する。
+以下は Doma2 が提供する ORM レベルの Dialect 機能。sqlym の現在のスコープ（SQL テンプレートエンジン）を超える可能性があるため、必要に応じて採用を検討する。
 
 | ID | Summary | 参考（Doma2） |
 |---|---|---|
@@ -240,7 +240,7 @@
   - Oracle 12c+: `OFFSET m ROWS FETCH NEXT n ROWS ONLY`
   - Oracle 11g: `ROWNUM` ラップ
 - 参考: Doma2 の `*PagingTransformer` クラス群
-- 注意: sqly は SQL テンプレートエンジンのため、開発者が SQL に直接記述することでも対応可能。エンジン側で提供する必要性は低い
+- 注意: sqlym は SQL テンプレートエンジンのため、開発者が SQL に直接記述することでも対応可能。エンジン側で提供する必要性は低い
 
 #### BACKLOG-002: 識別子クォート
 

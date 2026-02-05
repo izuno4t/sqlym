@@ -2,13 +2,13 @@
 
 [日本語](SQL_SYNTAX.ja.md)
 
-This document describes how to write SQL templates for sqly.
+This document describes how to write SQL templates for sqlym.
 
 ## Basic Concept
 
-sqly SQL templates are **2-way SQL**.
+sqlym SQL templates are **2-way SQL**.
 
-- Through sqly, parameters are bound and the SQL is executed
+- Through sqlym, parameters are bound and the SQL is executed
 - Through a DB tool (pgAdmin, DBeaver, etc.), the default values are used
   as-is
 
@@ -19,7 +19,7 @@ SELECT * FROM users WHERE name = /* $name */'Yamada'
 | Execution method | Result |
 | --- | --- |
 | Directly in a DB tool | `WHERE name = 'Yamada'` (default value is used) |
-| Via sqly | `WHERE name = ?` + bind value `['Yamada']` |
+| Via sqlym | `WHERE name = ?` + bind value `['Yamada']` |
 
 Parameters are written inside SQL comments `/* ... */`, with a default value
 placed immediately after. DB tools ignore comments, so the default value is
@@ -119,7 +119,7 @@ WHERE
 
 ## Line Removal and Parent-Child Relationships
 
-sqly processes SQL **line by line**. Dynamic condition building is achieved
+sqlym processes SQL **line by line**. Dynamic condition building is achieved
 through line removal.
 
 ### Rule 1: Line-by-line Processing
@@ -367,12 +367,12 @@ Use this mechanism for RDBMS-specific SQL syntax such as pagination
 
 ## Error Messages
 
-When SQL parsing fails (e.g., invalid IN clause split), sqly raises
+When SQL parsing fails (e.g., invalid IN clause split), sqlym raises
 `SqlParseError`. By default, the error message includes the line number and a
 SQL snippet. To hide the SQL snippet, disable it via config:
 
 ```python
-from sqly import config
+from sqlym import config
 
 config.ERROR_INCLUDE_SQL = False
 config.ERROR_MESSAGE_LANGUAGE = "en"
