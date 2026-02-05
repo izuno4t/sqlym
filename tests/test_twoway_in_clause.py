@@ -27,11 +27,19 @@ class TestInClauseBasic:
         assert result.params == [42]
 
     def test_empty_list_becomes_null(self) -> None:
-        """空リストは IN (NULL) に展開される."""
-        sql = "SELECT * FROM users WHERE id IN /* $ids */(1, 2, 3)"
+        """非 removable IN句の空リストは IN (NULL) に展開される."""
+        sql = "SELECT * FROM users WHERE id IN /* ids */(1, 2, 3)"
         parser = TwoWaySQLParser(sql)
         result = parser.parse({"ids": []})
         assert result.sql == "SELECT * FROM users WHERE id IN (NULL)"
+        assert result.params == []
+
+    def test_removable_empty_list_removes_line(self) -> None:
+        """$付き IN句の空リストは行削除される（negative 拡張）."""
+        sql = "SELECT * FROM users WHERE id IN /* $ids */(1, 2, 3)"
+        parser = TwoWaySQLParser(sql)
+        result = parser.parse({"ids": []})
+        assert result.sql == ""
         assert result.params == []
 
 

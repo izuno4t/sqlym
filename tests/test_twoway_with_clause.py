@@ -144,7 +144,20 @@ SELECT * FROM filtered"""
         assert result.params == [10, 20, 30]
 
     def test_with_clause_in_empty_list(self) -> None:
-        """WITH 句内で IN 句に空リストを渡した場合."""
+        """WITH 句内で非 removable IN 句に空リストを渡した場合."""
+        sql = """\
+WITH filtered AS (
+    SELECT * FROM users
+    WHERE dept_id IN /* dept_ids */(1, 2, 3)
+)
+SELECT * FROM filtered"""
+        parser = TwoWaySQLParser(sql)
+        result = parser.parse({"dept_ids": []})
+        assert "IN (NULL)" in result.sql
+        assert result.params == []
+
+    def test_with_clause_in_removable_empty_list(self) -> None:
+        """WITH 句内で $付き IN 句の空リストは行削除される."""
         sql = """\
 WITH filtered AS (
     SELECT * FROM users
@@ -153,8 +166,9 @@ WITH filtered AS (
 SELECT * FROM filtered"""
         parser = TwoWaySQLParser(sql)
         result = parser.parse({"dept_ids": []})
-        assert "IN (NULL)" in result.sql
-        assert result.params == []
+        # 空リストは negative なので行削除、親も削除され WITH 句全体が消える
+        assert "WITH" not in result.sql
+        assert result.sql.strip() == "SELECT * FROM filtered"
 
 
 class TestWithClauseComplex:

@@ -15,6 +15,34 @@ if TYPE_CHECKING:
     from sqlym.dialect import Dialect
 
 
+def is_negative(value: Any) -> bool:
+    """値が negative（無効値）かどうかを判定する.
+
+    以下の値を negative として扱う:
+    - None
+    - False（Boolean）
+    - 空リスト []
+    - 全要素が negative のリスト
+
+    Args:
+        value: 判定対象の値
+
+    Returns:
+        negative の場合 True
+
+    """
+    if value is None:
+        return True
+    if value is False:
+        return True
+    if isinstance(value, list):
+        if len(value) == 0:
+            return True
+        if all(is_negative(item) for item in value):
+            return True
+    return False
+
+
 @dataclass
 class ParsedSQL:
     """パース結果."""
@@ -109,16 +137,18 @@ class TwoWaySQLParser:
     def _evaluate_params(self, units: list[LineUnit], params: dict[str, Any]) -> None:
         """パラメータを評価して行の削除を決定(Rule 4).
 
-        $付き(removable)パラメータの値が None または params に存在しない場合、
+        $付き(removable)パラメータの値が negative の場合、
         その行を削除対象としてマークする。
-        非 removable パラメータは None でも行を削除しない（NULL バインド）。
+        非 removable パラメータは negative でも行を削除しない（NULL バインド）。
+
+        negative とは: None, False, 空リスト, 全要素が negative のリスト
         """
         for unit in units:
             if unit.is_empty or unit.removed:
                 continue
             tokens = tokenize(unit.content)
             for token in tokens:
-                if token.removable and params.get(token.name) is None:
+                if token.removable and is_negative(params.get(token.name)):
                     unit.removed = True
                     break
 
