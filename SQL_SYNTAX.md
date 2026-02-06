@@ -348,14 +348,14 @@ When SQL syntax differs across databases, provide separate files.
 ```text
 sql/employee/
 ├── find.sql              # Common SQL
-├── find.sql-oracle       # Oracle-specific (loaded preferentially)
-└── find.sql-postgresql   # PostgreSQL-specific (loaded preferentially)
+├── find.oracle.sql       # Oracle-specific (loaded preferentially)
+└── find.postgresql.sql   # PostgreSQL-specific (loaded preferentially)
 ```
 
 ```python
 loader = SqlLoader("sql")
 
-# With a dialect specified, find.sql-oracle is tried first, falling back to
+# With a dialect specified, find.oracle.sql is tried first, falling back to
 # find.sql
 sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
 ```

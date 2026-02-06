@@ -344,14 +344,14 @@ RDBMS ごとに SQL 構文が異なる場合は、ファイルを分けて対応
 ```text
 sql/employee/
 ├── find.sql              # 共通 SQL
-├── find.sql-oracle       # Oracle 固有（優先ロード）
-└── find.sql-postgresql   # PostgreSQL 固有（優先ロード）
+├── find.oracle.sql       # Oracle 固有（優先ロード）
+└── find.postgresql.sql   # PostgreSQL 固有（優先ロード）
 ```
 
 ```python
 loader = SqlLoader("sql")
 
-# Dialect を指定すると、まず find.sql-oracle を探し、なければ find.sql に
+# Dialect を指定すると、まず find.oracle.sql を探し、なければ find.sql に
 # フォールバック
 sql = loader.load("employee/find.sql", dialect=Dialect.ORACLE)
 ```
