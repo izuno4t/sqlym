@@ -1,10 +1,11 @@
 # sqlym
 
-[![PyPI version](https://img.shields.io/pypi/v/sqlym.svg)](https://pypi.org/project/sqlym/)
-[![Python versions](https://img.shields.io/pypi/pyversions/sqlym.svg)](https://pypi.org/project/sqlym/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/izuno4t/sqly)
 [![License](https://img.shields.io/pypi/l/sqlym.svg)](https://github.com/izuno4t/sqlym/blob/main/LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/sqlym.svg)](https://pypi.org/project/sqlym/)
 [![CI](https://github.com/izuno4t/sqlym/actions/workflows/ci.yml/badge.svg)](https://github.com/izuno4t/sqlym/actions/workflows/ci.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Python versions](https://img.shields.io/pypi/pyversions/sqlym.svg)](https://pypi.org/project/sqlym/)
 
 [日本語](README.ja.md)
 
