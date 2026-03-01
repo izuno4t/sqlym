@@ -271,6 +271,29 @@ WHERE id = /* id */0
         user = db.query_one(User, "users/find_by_id.sql", {"id": 1})
         assert user is None
 
+    def test_insert_returns_lastrowid(self, db: Sqlym) -> None:
+        """insert() で自動生成 ID を取得できる."""
+        lastrowid = db.insert(
+            "users/insert.sql",
+            {"id": 4, "name": "David", "status": "active"},
+        )
+        assert lastrowid is not None
+        db.commit()
+        user = db.query_one(User, "users/find_by_id.sql", {"id": 4})
+        assert user is not None
+        assert user.name == "David"
+
+    def test_insert_auto_commit(self, db: Sqlym, sql_dir: Path) -> None:
+        """insert() で auto_commit が動作する."""
+        db_auto = Sqlym(db._connection, sql_dir=sql_dir, auto_commit=True)
+        lastrowid = db_auto.insert(
+            "users/insert.sql",
+            {"id": 5, "name": "Eve", "status": "active"},
+        )
+        assert lastrowid is not None
+        user = db.query_one(User, "users/find_by_id.sql", {"id": 5})
+        assert user is not None
+
 
 class TestSqlymAutoCommit:
     """auto_commit モードのテスト."""

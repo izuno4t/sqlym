@@ -10,7 +10,7 @@ class TestRule4Basic:
         """$param が None → 行削除."""
         sql = "SELECT * FROM users\nWHERE\n  AND name = /* $name */'default'"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None})
         assert units[2].removed is True
@@ -19,7 +19,7 @@ class TestRule4Basic:
         """$param が値あり → 行削除しない."""
         sql = "SELECT * FROM users\nWHERE\n  AND name = /* $name */'default'"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": "Alice"})
         assert units[2].removed is False
@@ -28,7 +28,7 @@ class TestRule4Basic:
         """非 removable param が None → 行削除しない（NULL バインド）."""
         sql = "SELECT * FROM users\nWHERE\n  AND name = /* name */'default'"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None})
         assert units[2].removed is False
@@ -37,7 +37,7 @@ class TestRule4Basic:
         """$param が params に存在しない → 行削除."""
         sql = "SELECT * FROM users\nWHERE\n  AND name = /* $name */'default'"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {})
         assert units[2].removed is True
@@ -55,7 +55,7 @@ class TestRule4MultipleLines:
             "  AND age = /* $age */20"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None, "age": 30})
         assert units[2].removed is True  # name は None → 削除
@@ -70,7 +70,7 @@ class TestRule4MultipleLines:
             "  AND age = /* $age */20"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None, "age": None})
         assert units[2].removed is True
@@ -89,7 +89,7 @@ class TestRule3Basic:
             "  AND age = /* $age */20"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None, "age": None})
         parser._propagate_removal(units)
@@ -104,7 +104,7 @@ class TestRule3Basic:
             "  AND age = /* $age */20"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"name": None, "age": 30})
         parser._propagate_removal(units)
@@ -124,7 +124,7 @@ class TestRule3Nested:
             "  )"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"status1": None, "status2": None})
         parser._propagate_removal(units)
@@ -144,7 +144,7 @@ class TestRule3Nested:
             "  )"
         )
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parser._evaluate_params(units, {"status1": None, "status2": None})
         parser._propagate_removal(units)

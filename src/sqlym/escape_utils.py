@@ -12,7 +12,7 @@ def escape_like(value: str, dialect: Dialect, *, escape_char: str | None = None)
     """LIKE 句で使用する値の特殊文字をエスケープする.
 
     LIKE 句のワイルドカード文字（``%``, ``_``）およびエスケープ文字自体を
-    エスケープ処理する。Oracle では全角ワイルドカード（``％``, ``＿``）も対象。
+    エスケープ処理する。
 
     Args:
         value: エスケープ対象の文字列
@@ -29,7 +29,7 @@ def escape_like(value: str, dialect: Dialect, *, escape_char: str | None = None)
         >>> escape_like("file_name", Dialect.ORACLE)
         'file#_name'
         >>> escape_like("100％達成", Dialect.ORACLE)
-        '100#％達成'
+        '100％達成'
 
     Note:
         この関数でエスケープした値を LIKE 句で使用する場合、

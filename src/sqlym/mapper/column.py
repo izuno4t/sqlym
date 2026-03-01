@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
+_VALID_NAMING = frozenset({"as_is", "snake_to_camel", "camel_to_snake"})
 
+
+@dataclass(frozen=True)
 class Column:
     """カラム名を指定するアノテーション."""
 
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __repr__(self) -> str:
-        return f"Column({self.name!r})"
+    name: str
 
 
 def entity(
@@ -29,6 +29,9 @@ def entity(
         naming: 命名規則 ("as_is", "snake_to_camel", "camel_to_snake")
 
     """
+    if naming not in _VALID_NAMING:
+        msg = f"Invalid naming: {naming!r}. Must be one of {sorted(_VALID_NAMING)}"
+        raise ValueError(msg)
 
     def decorator(cls: type) -> type:
         cls.__column_map__ = column_map or {}  # type: ignore[attr-defined]

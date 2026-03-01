@@ -8,7 +8,7 @@ class TestParseLines:
 
     def test_single_line(self) -> None:
         parser = TwoWaySQLParser("SELECT * FROM users")
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert len(units) == 1
         assert units[0].line_number == 1
         assert units[0].original == "SELECT * FROM users"
@@ -18,7 +18,7 @@ class TestParseLines:
     def test_multiple_lines(self) -> None:
         sql = "SELECT *\nFROM users\nWHERE id = 1"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert len(units) == 3
         assert units[0].content == "SELECT *"
         assert units[1].content == "FROM users"
@@ -27,14 +27,14 @@ class TestParseLines:
     def test_line_numbers_start_at_1(self) -> None:
         sql = "SELECT *\nFROM users"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[0].line_number == 1
         assert units[1].line_number == 2
 
     def test_indented_lines(self) -> None:
         sql = "WHERE\n  AND a = 1\n  AND b = 2"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[0].indent == 0
         assert units[0].content == "WHERE"
         assert units[1].indent == 2
@@ -45,14 +45,14 @@ class TestParseLines:
     def test_original_preserves_whitespace(self) -> None:
         sql = "  AND a = 1"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[0].original == "  AND a = 1"
         assert units[0].content == "AND a = 1"
 
     def test_empty_line(self) -> None:
         sql = "SELECT *\n\nFROM users"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert len(units) == 3
         assert units[1].is_empty is True
         assert units[1].indent == -1
@@ -60,14 +60,14 @@ class TestParseLines:
     def test_whitespace_only_line(self) -> None:
         sql = "SELECT *\n   \nFROM users"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[1].is_empty is True
         assert units[1].indent == -1
 
     def test_deep_indentation(self) -> None:
         sql = "WHERE\n    AND (\n        OR x = 1\n        OR y = 2\n    )"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[0].indent == 0
         assert units[1].indent == 4
         assert units[2].indent == 8
@@ -76,7 +76,7 @@ class TestParseLines:
 
     def test_defaults(self) -> None:
         parser = TwoWaySQLParser("SELECT 1")
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         assert units[0].children == []
         assert units[0].parent is None
         assert units[0].removed is False
@@ -88,7 +88,7 @@ class TestBuildTree:
     def test_flat_lines_no_parent(self) -> None:
         sql = "SELECT *\nFROM users\nWHERE 1 = 1"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         for unit in units:
             assert unit.parent is None
@@ -97,7 +97,7 @@ class TestBuildTree:
     def test_simple_parent_child(self) -> None:
         sql = "WHERE\n  AND a = 1"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parent, child = units[0], units[1]
         assert child.parent is parent
@@ -106,7 +106,7 @@ class TestBuildTree:
     def test_multiple_children(self) -> None:
         sql = "WHERE\n  AND a = 1\n  AND b = 2\n  AND c = 3"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         parent = units[0]
         assert len(parent.children) == 3
@@ -116,7 +116,7 @@ class TestBuildTree:
     def test_nested_hierarchy(self) -> None:
         sql = "WHERE\n  AND (\n    OR x = 1\n    OR y = 2\n  )"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         where = units[0]
         and_paren = units[1]
@@ -139,7 +139,7 @@ class TestBuildTree:
     def test_empty_lines_skipped(self) -> None:
         sql = "WHERE\n\n  AND a = 1"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         where = units[0]
         empty = units[1]
@@ -152,7 +152,7 @@ class TestBuildTree:
     def test_indent_decrease_returns_to_parent_level(self) -> None:
         sql = "SELECT *\nFROM users\nWHERE\n  AND a = 1\nORDER BY id"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         _select, _from, where, and_a, order = units
         assert and_a.parent is where
@@ -162,7 +162,7 @@ class TestBuildTree:
     def test_sibling_groups_under_different_parents(self) -> None:
         sql = "WHERE\n  AND a = 1\n  AND b = 2\nORDER BY\n  id\n  name"
         parser = TwoWaySQLParser(sql)
-        units = parser._parse_lines()
+        units = parser._parse_lines(parser.original_sql)
         parser._build_tree(units)
         where, and_a, and_b, order, id_, name = units
         assert len(where.children) == 2

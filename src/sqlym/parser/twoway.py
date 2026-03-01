@@ -166,13 +166,14 @@ class TwoWaySQLParser:
     def parse(self, params: dict[str, Any]) -> ParsedSQL:
         """SQLをパースしてパラメータをバインド."""
         # %include ディレクティブを展開
+        sql = self.original_sql
         if self.base_path is not None:
-            self.original_sql = self._expand_includes(
-                self.original_sql,
+            sql = self._expand_includes(
+                sql,
                 self.base_path,
                 included_files=set(),
             )
-        units = self._parse_lines()
+        units = self._parse_lines(sql)
         units = self._process_block_directives(units, params)
         self._build_tree(units)
         self._evaluate_params(units, params)
@@ -191,13 +192,17 @@ class TwoWaySQLParser:
             named_params=params,
         )
 
-    def _parse_lines(self) -> list[LineUnit]:
+    def _parse_lines(self, sql: str) -> list[LineUnit]:
         """行をパースしてLineUnitリストを作成(Rule 1).
 
         複数行にまたがる文字列リテラルは1つの論理行として結合する。
+
+        Args:
+            sql: パース対象の SQL 文字列
+
         """
         units: list[LineUnit] = []
-        raw_lines = self.original_sql.splitlines()
+        raw_lines = sql.splitlines()
         i = 0
 
         while i < len(raw_lines):
@@ -342,7 +347,13 @@ class TwoWaySQLParser:
         # ブロック情報を収集: [(condition, start_idx, end_idx), ...]
         blocks: list[tuple[str | None, int, int]] = []
         if_directive = parse_directive(units[start_idx].content)
-        assert if_directive is not None and if_directive.type == DirectiveType.IF
+        if if_directive is None or if_directive.type != DirectiveType.IF:
+            msg = self._format_error(
+                "directive_without_if",
+                line_number=units[start_idx].line_number,
+                sql_line=units[start_idx].content,
+            )
+            raise SqlParseError(msg)
 
         current_condition = if_directive.condition
         current_start = start_idx + 1

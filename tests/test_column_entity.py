@@ -19,7 +19,7 @@ class TestColumn:
     def test_column_repr(self) -> None:
         """Column の repr."""
         col = Column("EMP_NAME")
-        assert repr(col) == "Column('EMP_NAME')"
+        assert repr(col) == "Column(name='EMP_NAME')"
 
 
 class TestEntityDecorator:

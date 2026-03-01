@@ -30,6 +30,13 @@ class LineUnit:
     removed: bool = False
     """削除フラグ."""
 
+    def __repr__(self) -> str:
+        """デバッグ用の文字列表現."""
+        return (
+            f"LineUnit(line={self.line_number}, "
+            f"indent={self.indent}, removed={self.removed})"
+        )
+
     @property
     def is_empty(self) -> bool:
         """空行かどうか."""

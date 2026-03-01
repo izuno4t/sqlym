@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import weakref
 from dataclasses import fields, is_dataclass
 from typing import Annotated, Any, ClassVar, get_args, get_origin, get_type_hints
 
@@ -12,7 +13,9 @@ from sqlym.mapper.column import Column
 class DataclassMapper:
     """Dataclass 用の自動マッパー."""
 
-    _mapping_cache: ClassVar[dict[type, dict[str, str]]] = {}
+    _mapping_cache: ClassVar[
+        weakref.WeakKeyDictionary[type, dict[str, str]]
+    ] = weakref.WeakKeyDictionary()
 
     def __init__(self, entity_cls: type) -> None:
         if not is_dataclass(entity_cls):
