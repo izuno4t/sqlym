@@ -13,9 +13,9 @@ from sqlym.mapper.column import Column
 class DataclassMapper:
     """Dataclass 用の自動マッパー."""
 
-    _mapping_cache: ClassVar[
-        weakref.WeakKeyDictionary[type, dict[str, str]]
-    ] = weakref.WeakKeyDictionary()
+    _mapping_cache: ClassVar[weakref.WeakKeyDictionary[type, dict[str, str]]] = (
+        weakref.WeakKeyDictionary()
+    )
 
     def __init__(self, entity_cls: type) -> None:
         if not is_dataclass(entity_cls):

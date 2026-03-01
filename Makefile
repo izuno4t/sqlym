@@ -1,4 +1,7 @@
-.PHONY: install test lint format lint-fix spell pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all build release-test release
+.PHONY: dev install test lint format lint-fix spell pre-commit clean db-up db-down test-postgresql test-mysql test-oracle test-db test-all build release-test release
+
+dev: install
+	uv run pre-commit install
 
 install:
 	uv sync --dev

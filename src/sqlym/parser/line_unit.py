@@ -32,10 +32,7 @@ class LineUnit:
 
     def __repr__(self) -> str:
         """デバッグ用の文字列表現."""
-        return (
-            f"LineUnit(line={self.line_number}, "
-            f"indent={self.indent}, removed={self.removed})"
-        )
+        return f"LineUnit(line={self.line_number}, indent={self.indent}, removed={self.removed})"
 
     @property
     def is_empty(self) -> bool:
